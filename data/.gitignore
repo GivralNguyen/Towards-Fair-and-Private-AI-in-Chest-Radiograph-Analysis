@@ -1,3 +1,4 @@
 CHEXPERT_DEMO.xlsx
-chexpert_train.csv
-chexpert_valid.csv
+chexpert_train_small.csv
+chexpert_valid_small.csv
+train_cheXbert.csv
