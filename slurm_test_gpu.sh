@@ -8,7 +8,6 @@
 #SBATCH --cpus-per-task=16  # Number of CPUs (Don't use more than 24 per GPU)
 #SBATCH --mem=20G  # Memory in GB (Don't use more than 48GB per GPU unless you absolutely need it and know what you are doing)
 #SBATCH --partition=master
-#SBATCH --partition=master
 #SBATCH --nodelist=prometheus
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=END
@@ -17,12 +16,12 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=cobainnguyen@gmail.com
 
-# load python module
-ml python/anaconda3
+# # load python module
+# module load python/anaconda3
  
-# activate corresponding environment
-conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
-conda activate ngq # If this does not work, try 'source activate ptl'
+# # activate corresponding environment
+# conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
+source activate ngq # If this does not work, try 'source activate ptl'
  
 # run the program
 python test_gpu_slurm.py
