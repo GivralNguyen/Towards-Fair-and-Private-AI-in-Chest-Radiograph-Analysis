@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # Assuming you have a dataset (e.g., MNIST) downloaded in a 'data' directory
 
     # Check if CUDA (GPU support) is available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
     print(device)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
     train_set = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)

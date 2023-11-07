@@ -25,4 +25,4 @@ conda deactivate # If you launch your script from a terminal where your environm
 source activate ngq # If this does not work, try 'source activate ptl'
  
 # run the program
-python test_gpu_slurm.py
+python chexpert.disease.py --accelerator gpu
