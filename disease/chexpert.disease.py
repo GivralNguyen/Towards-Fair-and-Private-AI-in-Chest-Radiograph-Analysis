@@ -21,9 +21,9 @@ image_size = (224, 224)
 num_classes = 14
 batch_size = 150
 epochs = 20
-num_workers = 0
+num_workers = 4
 img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
-
+torch.set_float32_matmul_precision('high')
 
 class CheXpertDataset(Dataset):
     def __init__(self, csv_file_img, image_size, augmentation=False, pseudo_rgb = True):
@@ -119,7 +119,7 @@ class ResNet(pl.LightningModule):
     def __init__(self, num_classes):
         super().__init__()
         self.num_classes = num_classes
-        self.model = models.resnet18(pretrained=True)
+        self.model = models.resnet18(weights='ResNet18_Weights.DEFAULT')
         # freeze_model(self.model)
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, self.num_classes)
@@ -170,7 +170,7 @@ class DenseNet(pl.LightningModule):
     def __init__(self, num_classes):
         super().__init__()
         self.num_classes = num_classes
-        self.model = models.densenet121(pretrained=True)
+        self.model = models.densenet121(weights='DenseNet121_Weights.DEFAULT')
         # freeze_model(self.model)
         num_features = self.model.classifier.in_features
         self.model.classifier = nn.Linear(num_features, self.num_classes)
@@ -361,7 +361,7 @@ def main(hparams):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--accelerator', default="cpu")
+    parser.add_argument('--accelerator', default="gpu")
     args = parser.parse_args()
 
     main(args)
