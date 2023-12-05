@@ -317,12 +317,9 @@ def main(hparams):
         log_every_n_steps = 5,
         max_epochs=epochs,
         accelerator=hparams.accelerator,
-        logger=TensorBoardLogger('chexpert/disease', name=out_name),
     )
-    trainer.logger._default_hp_metric = False
-    trainer.fit(model, data)
 
-    model = model_type.load_from_checkpoint(trainer.checkpoint_callback.best_model_path, num_classes=num_classes)
+    model = model_type.load_from_checkpoint("/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/disease/chexpert/disease/resnet-all/version_0/checkpoints/epoch=11-step=6108.ckpt", num_classes=num_classes)
 
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda") if use_cuda else "cpu"
@@ -357,7 +354,7 @@ def main(hparams):
     df = pd.concat([df, df_logits, df_targets], axis=1)
     df.to_csv(os.path.join(out_dir, 'predictions.resample.test.csv'), index=False)
 
-    print('EMBEDDINGS')
+    print('EMBEDDINGS RESAMPLE')
 
     model.remove_head()
 
@@ -372,7 +369,7 @@ def main(hparams):
     df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
     df = pd.concat([df, df_targets], axis=1)
     df.to_csv(os.path.join(out_dir, 'embeddings.test.csv'), index=False)
-
+    
     embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
     df = pd.DataFrame(data=embeds_test_resample)
     df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
