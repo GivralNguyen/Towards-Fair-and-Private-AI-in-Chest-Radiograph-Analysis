@@ -4,3 +4,4 @@ chexpert_valid_small.csv
 train_cheXbert.csv
 MNIST
 chexpert.sample*
+chexpert.resample*
