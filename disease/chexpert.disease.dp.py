@@ -22,7 +22,10 @@ from opacus.lightning import DPLightningDataModule
 
 image_size = (224, 224)
 num_classes = 14
-batch_size = 150
+batch_size = 512
+MAX_GRAD_NORM = 1.2
+EPSILON = 50.0
+DELTA = 1/80000
 epochs = 20
 num_workers = 4
 img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
@@ -101,7 +104,7 @@ class CheXpertDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-        self.train_set = CheXpertDataset(self.csv_train_img, self.image_size, augmentation=True, pseudo_rgb=pseudo_rgb)
+        self.train_set = CheXpertDataset(self.csv_train_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
         self.val_set = CheXpertDataset(self.csv_val_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
         self.test_set = CheXpertDataset(self.csv_test_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
         self.test_set_resample = CheXpertDataset(self.csv_test_img_resample, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
@@ -127,9 +130,12 @@ class CheXpertDataModule(pl.LightningDataModule):
 class ResNetDP(pl.LightningModule):
     def __init__(self, num_classes,
         enable_dp: bool = True,  
-        delta: float = 1e-5,
+        epochs=epochs,
+        target_epsilon=EPSILON,
+        target_delta=DELTA,
+        max_grad_norm=MAX_GRAD_NORM,
         noise_multiplier: float = 1.0,
-        max_grad_norm: float = 1.0,):
+        ):
         """A Resnet for classifying with differential privacy training
         Args:
             lr: Learning rate
@@ -145,7 +151,9 @@ class ResNetDP(pl.LightningModule):
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, self.num_classes)
         self.enable_dp = enable_dp
-        self.delta = delta
+        self.epochs = epochs
+        self.target_epsilon = target_epsilon
+        self.target_delta = target_delta
         self.noise_multiplier = noise_multiplier
         self.max_grad_norm = max_grad_norm
         if self.enable_dp:
@@ -168,16 +176,17 @@ class ResNetDP(pl.LightningModule):
             # transform (model, optimizer, dataloader) to DP-versions
             if hasattr(self, "dp"):
                 self.dp["model"].remove_hooks()
-            dp_model, optimizer, dataloader = self.privacy_engine.make_private(
+            dp_model, optimizer, dataloader = self.privacy_engine.make_private_with_epsilon(
                 module=self,
                 optimizer=optimizer,
                 data_loader=data_loader,
-                noise_multiplier=self.noise_multiplier,
+                epochs=self.epochs,
+                target_epsilon=self.target_epsilon,
+                target_delta=self.target_delta,
                 max_grad_norm=self.max_grad_norm,
-                poisson_sampling=isinstance(data_loader, DPDataLoader),
             )
             self.dp = {"model": dp_model}
-
+            print(f"Using sigma={optimizer.noise_multiplier}, batch size = {batch_size},  epochs = {self.epochs}, target_epsilon ={self.target_epsilon}, target delta = {self.target_delta} ,  max grad norm={self.max_grad_norm}")
         # params_to_update = []
         # for param in self.parameters():
         #     if param.requires_grad == True:
