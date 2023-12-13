@@ -126,6 +126,10 @@ class CheXpertDataModule(pl.LightningDataModule):
         return DataLoader(self.test_set_resample, self.batch_size, shuffle=False, num_workers=self.num_workers)
 
 
+from groupnormresnet import resnet18gn
+
+# Instantiate the custom model
+
 
 class ResNetDP(pl.LightningModule):
     def __init__(self, num_classes,
@@ -146,7 +150,7 @@ class ResNetDP(pl.LightningModule):
         """
         super().__init__()
         self.num_classes = num_classes
-        self.model = models.resnet18(weights='ResNet18_Weights.DEFAULT')
+        self.model = resnet18gn()
         # freeze_model(self.model)
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, self.num_classes)
@@ -221,7 +225,7 @@ class ResNetDP(pl.LightningModule):
 
     def on_train_epoch_end(self):
         # Logging privacy spent: (epsilon, delta)
-        epsilon = self.privacy_engine.get_epsilon(self.delta)
+        epsilon = self.privacy_engine.get_epsilon(self.target_delta)
         self.log("epsilon", epsilon, on_epoch=True, prog_bar=True)
 
 def freeze_model(model):
@@ -295,12 +299,16 @@ def main(hparams):
     # model
     model_type = ResNetDP
     model = model_type(num_classes=num_classes)
-    from opacus.validators import ModuleValidator
+    # Load pre-trained weights from the original ResNet-18
+    pretrained_resnet18 = models.resnet18(weights='ResNet18_Weights.DEFAULT')
+    model.load_state_dict(pretrained_resnet18.state_dict(), strict=False)
 
-    errors = ModuleValidator.validate(model, strict=False)
-    errors[-5:]
-    model = ModuleValidator.fix(model)
-    ModuleValidator.validate(model, strict=False)
+    # from opacus.validators import ModuleValidator
+
+    # errors = ModuleValidator.validate(model, strict=False)
+    # errors[-5:]
+    # model = ModuleValidator.fix(model)
+    # ModuleValidator.validate(model, strict=False)
     # Create output directory
     out_name = 'resnet-all'
     out_dir = 'chexpert/diseasedp/' + out_name
@@ -323,7 +331,7 @@ def main(hparams):
         log_every_n_steps = 5,
         max_epochs=epochs,
         accelerator=hparams.accelerator,
-        logger=TensorBoardLogger('chexpert/disease', name=out_name),
+        logger=TensorBoardLogger('chexpert/diseasedp', name=out_name),
     )
     trainer.logger._default_hp_metric = False
     dp_data = DPLightningDataModule(data)
