@@ -22,7 +22,7 @@ from opacus.lightning import DPLightningDataModule
 
 image_size = (224, 224)
 num_classes = 14
-batch_size = 512
+batch_size = 256
 MAX_GRAD_NORM = 1.2
 EPSILON = 50.0
 DELTA = 1/80000
@@ -301,7 +301,12 @@ def main(hparams):
     model = model_type(num_classes=num_classes)
     # Load pre-trained weights from the original ResNet-18
     pretrained_resnet18 = models.resnet18(weights='ResNet18_Weights.DEFAULT')
-    model.load_state_dict(pretrained_resnet18.state_dict(), strict=False)
+    new_state_dict = {}
+    for key, value in pretrained_resnet18.state_dict().items():
+        new_key = "model." + key  # You may need to adjust this based on your model's structure
+        new_state_dict[new_key] = value
+    new_state_dict_without_fc = {k: v for k, v in new_state_dict.items() if 'fc' not in k}
+    model.load_state_dict(new_state_dict_without_fc, strict=False)
 
     # from opacus.validators import ModuleValidator
 
