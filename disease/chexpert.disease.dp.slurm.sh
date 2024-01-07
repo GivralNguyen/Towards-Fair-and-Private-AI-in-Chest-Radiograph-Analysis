@@ -25,4 +25,4 @@
 # source activate ngq # If this does not work, try 'source activate ptl'
  
 # run the program
-python chexpert.disease.dp.py --accelerator gpu
+python chexpert.disease.dp.py --accelerator gpu --batch_size 1024 --max_physical_batch_size 256

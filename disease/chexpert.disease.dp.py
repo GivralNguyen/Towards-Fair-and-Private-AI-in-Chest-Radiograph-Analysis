@@ -9,7 +9,6 @@ import torchvision
 import torchvision.transforms as T
 from torchvision import models
 import pytorch_lightning as pl
-
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from skimage.io import imread
@@ -19,13 +18,16 @@ from argparse import ArgumentParser
 from opacus import PrivacyEngine
 from opacus.data_loader import DPDataLoader
 from opacus.lightning import DPLightningDataModule
+from opacus.utils.batch_memory_manager import BatchMemoryManager
+
 
 image_size = (224, 224)
 num_classes = 14
-batch_size = 256
-MAX_GRAD_NORM = 1.2
-EPSILON = 50.0
-DELTA = 1/80000
+# batch_size = 1024
+# max_physical_batch_size = 256
+# MAX_GRAD_NORM = 1.2
+# EPSILON = 50.0
+# DELTA = 1/80000
 epochs = 20
 num_workers = 4
 img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
@@ -94,7 +96,7 @@ class CheXpertDataset(Dataset):
 
 
 class CheXpertDataModule(pl.LightningDataModule):
-    def __init__(self, csv_train_img, csv_val_img, csv_test_img, csv_test_img_resample, image_size, pseudo_rgb, batch_size, num_workers):
+    def __init__(self, csv_train_img, csv_val_img, csv_test_img, csv_test_img_resample, image_size, pseudo_rgb, batch_size, max_physical_batch_size, num_workers):
         super().__init__()
         self.csv_train_img = csv_train_img
         self.csv_val_img = csv_val_img
@@ -102,6 +104,7 @@ class CheXpertDataModule(pl.LightningDataModule):
         self.csv_test_img_resample = csv_test_img_resample
         self.image_size = image_size
         self.batch_size = batch_size
+        self.max_physical_batch_size = max_physical_batch_size
         self.num_workers = num_workers
 
         self.train_set = CheXpertDataset(self.csv_train_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
@@ -117,13 +120,13 @@ class CheXpertDataModule(pl.LightningDataModule):
         return DataLoader(self.train_set, self.batch_size, shuffle=True, num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(self.val_set, self.max_physical_batch_size, shuffle=False, num_workers=self.num_workers)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set, self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(self.test_set, self.max_physical_batch_size, shuffle=False, num_workers=self.num_workers)
 
     def test_resample_dataloader(self):
-        return DataLoader(self.test_set_resample, self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(self.test_set_resample, self.max_physical_batch_size, shuffle=False, num_workers=self.num_workers)
 
 
 from groupnormresnet import resnet18gn
@@ -135,9 +138,9 @@ class ResNetDP(pl.LightningModule):
     def __init__(self, num_classes,
         enable_dp: bool = True,  
         epochs=epochs,
-        target_epsilon=EPSILON,
-        target_delta=DELTA,
-        max_grad_norm=MAX_GRAD_NORM,
+        target_epsilon=50.0,
+        target_delta=1/80000,
+        max_grad_norm=1.2,
         noise_multiplier: float = 1.0,
         ):
         """A Resnet for classifying with differential privacy training
@@ -176,7 +179,7 @@ class ResNetDP(pl.LightningModule):
         if self.enable_dp:
             self.trainer.fit_loop.setup_data()
             data_loader = self.trainer.train_dataloader
-
+            
             # transform (model, optimizer, dataloader) to DP-versions
             if hasattr(self, "dp"):
                 self.dp["model"].remove_hooks()
@@ -189,6 +192,8 @@ class ResNetDP(pl.LightningModule):
                 target_delta=self.target_delta,
                 max_grad_norm=self.max_grad_norm,
             )
+            
+
             self.dp = {"model": dp_model}
             print(f"Using sigma={optimizer.noise_multiplier}, batch size = {batch_size},  epochs = {self.epochs}, target_epsilon ={self.target_epsilon}, target delta = {self.target_delta} ,  max grad norm={self.max_grad_norm}")
         # params_to_update = []
@@ -238,7 +243,7 @@ def test(model, data_loader, device):
     logits = []
     preds = []
     targets = []
-
+    
     with torch.no_grad():
         for index, batch in enumerate(tqdm(data_loader, desc='Test-loop')):
             img, lab = batch['image'].to(device), batch['label'].to(device)
@@ -294,11 +299,12 @@ def main(hparams):
                               image_size=image_size,
                               pseudo_rgb=True,
                               batch_size=batch_size,
+                              max_physical_batch_size=max_physical_batch_size,
                               num_workers=num_workers)
 
     # model
     model_type = ResNetDP
-    model = model_type(num_classes=num_classes)
+    model = model_type(target_epsilon=hparams.epsilon,target_delta=hparams.delta,max_grad_norm=hparams.max_grad_norm,num_classes=num_classes)
     # Load pre-trained weights from the original ResNet-18
     pretrained_resnet18 = models.resnet18(weights='ResNet18_Weights.DEFAULT')
     new_state_dict = {}
@@ -316,7 +322,7 @@ def main(hparams):
     # ModuleValidator.validate(model, strict=False)
     # Create output directory
     out_name = 'resnet-all'
-    out_dir = 'chexpert/diseasedp/' + out_name
+    out_dir = f'chexpert/disease_dp/batch_{batch_size}_physbatch_{max_physical_batch_size}_gradnorm_{MAX_GRAD_NORM}_epsilon_{EPSILON}_delta_{DELTA}_epochs_{epochs}/{out_name}'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
@@ -336,7 +342,7 @@ def main(hparams):
         log_every_n_steps = 5,
         max_epochs=epochs,
         accelerator=hparams.accelerator,
-        logger=TensorBoardLogger('chexpert/diseasedp', name=out_name),
+        logger=TensorBoardLogger(f'chexpert/disease_dp/batch_{batch_size}_physbatch_{max_physical_batch_size}_gradnorm_{MAX_GRAD_NORM}_epsilon_{EPSILON}_delta_{DELTA}_epochs_{epochs}', name=out_name),
     )
     trainer.logger._default_hp_metric = False
     dp_data = DPLightningDataModule(data)
@@ -402,7 +408,22 @@ def main(hparams):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--accelerator', default="gpu")
+    parser.add_argument('--accelerator', default="cpu")
+    parser.add_argument('--batch_size', type=int, default=1024, help='Batch size for training')
+    parser.add_argument('--max_physical_batch_size', type=int, default=256, help='Maximum physical batch size')
+    parser.add_argument('--max_grad_norm', type=float, default=1.2, help='Maximum gradient norm')
+    parser.add_argument('--epsilon', type=float, default=50.0, help='Epsilon value')
+    parser.add_argument('--delta', type=float, default=1/80000, help='Delta value')
+    parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
+
     args = parser.parse_args()
+
+    # Now you can access the command-line arguments as attributes of the args object
+    batch_size = args.batch_size
+    max_physical_batch_size = args.max_physical_batch_size
+    MAX_GRAD_NORM = args.max_grad_norm
+    EPSILON = args.epsilon
+    DELTA = args.delta
+    epochs = args.epochs
 
     main(args)
