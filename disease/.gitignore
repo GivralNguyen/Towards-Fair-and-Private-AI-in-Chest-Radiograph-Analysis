@@ -1,3 +1,7 @@
 chexpert
 *.err
 *.out
+data/preproc_224x224/
+lightning.py
+test/MNIST/
+metrics/__pycache__/

@@ -22,7 +22,7 @@ num_classes = 14
 batch_size = 150
 epochs = 20
 num_workers = 4
-img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
+img_data_dir = '/home/quan/code/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/'
 torch.set_float32_matmul_precision('high')
 
 class CheXpertDataset(Dataset):

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
-img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
+img_data_dir = '/home/quan/code/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/'
 import torch
 from skimage.io import imread, imsave
 from tqdm import tqdm
@@ -34,6 +34,8 @@ class CheXpertDataset(Dataset):
         self.augment = T.Compose([
             T.RandomHorizontalFlip(p=0.5),
             T.RandomApply(transforms=[T.RandomAffine(degrees=15, scale=(0.9, 1.1))], p=0.5),
+            T.RandomApply(transforms=[T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)], p=0.5),
+            T.RandomApply(transforms=[T.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0))], p=0.5),
         ])
 
         self.samples = []
@@ -56,6 +58,7 @@ class CheXpertDataset(Dataset):
         label = torch.from_numpy(sample['label'])
 
         if self.do_augment:
+            print("hey doing aug")
             image = self.augment(image)
 
         if self.pseudo_rgb:
@@ -71,7 +74,7 @@ class CheXpertDataset(Dataset):
 
 
 class CheXpertDataModule(pl.LightningDataModule):
-    def __init__(self, csv_train_img, csv_val_img, csv_test_img, csv_test_img_resample, image_size, pseudo_rgb, batch_size, max_physical_batch_size, num_workers):
+    def __init__(self, csv_train_img, csv_val_img, csv_test_img, csv_test_img_resample, image_size, pseudo_rgb, batch_size, max_physical_batch_size, num_workers, train_aug):
         super().__init__()
         self.csv_train_img = csv_train_img
         self.csv_val_img = csv_val_img
@@ -81,8 +84,8 @@ class CheXpertDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_physical_batch_size = max_physical_batch_size
         self.num_workers = num_workers
-
-        self.train_set = CheXpertDataset(self.csv_train_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
+        self.train_aug = train_aug
+        self.train_set = CheXpertDataset(self.csv_train_img, self.image_size, augmentation=self.train_aug, pseudo_rgb=pseudo_rgb)
         self.val_set = CheXpertDataset(self.csv_val_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
         self.test_set = CheXpertDataset(self.csv_test_img, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
         self.test_set_resample = CheXpertDataset(self.csv_test_img_resample, self.image_size, augmentation=False, pseudo_rgb=pseudo_rgb)
