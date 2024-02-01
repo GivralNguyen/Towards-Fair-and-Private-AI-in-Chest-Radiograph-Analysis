@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
-img_data_dir = '/home/quan/code/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/'
+img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
 import torch
 from skimage.io import imread, imsave
 from tqdm import tqdm

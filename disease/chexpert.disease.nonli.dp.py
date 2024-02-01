@@ -20,12 +20,12 @@ image_size = (224, 224)
 num_classes = 14
 batch_size = 4096
 epochs = 20
-max_physical_batch_size = 32
+max_physical_batch_size = 256
 num_workers = 4
-img_data_dir = '/home/quan/code/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/'
+img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
 torch.set_float32_matmul_precision('high')
 MAX_GRAD_NORM = 1.2
-EPSILON = 5.0
+EPSILON = 4.0
 DELTA = 1/80000
 privacy_engine = PrivacyEngine()
 

@@ -13,10 +13,10 @@ from argparse import ArgumentParser
 import numpy as np
 image_size = (224, 224)
 num_classes = 14
-batch_size = 128
+batch_size = 256
 epochs = 20
 num_workers = 4
-img_data_dir = '/home/quan/code/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/'
+img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
 torch.set_float32_matmul_precision('high')
 
 def main(hparams):
