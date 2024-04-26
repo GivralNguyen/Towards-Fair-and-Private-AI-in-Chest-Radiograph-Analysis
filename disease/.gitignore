@@ -1,7 +1,9 @@
 chexpert
+chexpert_new
 *.err
 *.out
 data/preproc_224x224/
 lightning.py
 test/MNIST/
 metrics/__pycache__/
+disease/__pycache__/

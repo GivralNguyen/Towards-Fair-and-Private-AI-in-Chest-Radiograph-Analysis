@@ -11,12 +11,13 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 # Instantiate the custom model
 
 class NonLiResNet(nn.Module):
-    def __init__(self, num_classes, epochs, writer):
+    def __init__(self, num_classes, epochs, writer,learning_rate):
         super().__init__()
         self.num_classes = num_classes
         self.model = resnet18(weights='ResNet18_Weights.DEFAULT')
         self.epochs = epochs
         self.writer = writer
+        self.lr = learning_rate
         # freeze_model(self.model)
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, self.num_classes)
@@ -35,7 +36,7 @@ class NonLiResNet(nn.Module):
         for param in self.parameters():
             if param.requires_grad == True:
                 params_to_update.append(param)
-        optimizer = torch.optim.Adam(params_to_update, lr=0.0001, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(params_to_update, lr=self.lr , weight_decay=1e-5)
         return optimizer
 
     def train_model(self, train_loader, val_loader, optimizer):
@@ -79,11 +80,13 @@ class NonLiResNetDP(NonLiResNet):
         num_classes, 
         epochs,
         writer,
+        learning_rate
         ):
         super().__init__(
         num_classes = num_classes,
         epochs = epochs,
         writer = writer,
+        learning_rate=learning_rate
         )
         self.model = resnet18gn()
         self.model.fc = nn.Linear(self.model.fc.in_features, self.num_classes)

@@ -14,9 +14,10 @@ import numpy as np
 image_size = (224, 224)
 num_classes = 14
 batch_size = 256
-epochs = 20
+epochs = 100
 num_workers = 4
 img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
+learning_rate = 0.001
 torch.set_float32_matmul_precision('high')
 
 def main(hparams):
@@ -35,7 +36,7 @@ def main(hparams):
                               train_aug=True)
     # model
     out_name = 'nonli-resnet-all'
-    out_dir = 'chexpert/disease/' + out_name
+    out_dir = f'chexpert_new/disease/batch_{batch_size}_epochs_{epochs}_{learning_rate}_{out_name}'
     
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -48,8 +49,8 @@ def main(hparams):
         sample = data.train_set.get_sample(idx)
         imsave(os.path.join(temp_dir, 'sample_' + str(idx) + '.jpg'), sample['image'].astype(np.uint8))
     model_type = NonLiResNet
-    writer= SummaryWriter(log_dir=f'chexpert/disease/batch_{batch_size}_epochs_{epochs}_{out_name}')
-    model = model_type(num_classes=num_classes,epochs = epochs, writer=writer)
+    writer= SummaryWriter(log_dir=out_dir)
+    model = model_type(num_classes=num_classes,epochs = epochs, writer=writer,learning_rate=learning_rate)
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda") if use_cuda else "cpu"
 

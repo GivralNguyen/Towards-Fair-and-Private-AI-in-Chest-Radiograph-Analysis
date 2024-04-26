@@ -19,14 +19,15 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 image_size = (224, 224)
 num_classes = 14
 batch_size = 4096
-epochs = 20
+epochs = 100
 max_physical_batch_size = 256
 num_workers = 4
 img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
+learning_rate = 0.001 #deepmind
 torch.set_float32_matmul_precision('high')
 MAX_GRAD_NORM = 1.2
-EPSILON = 4.0
-DELTA = 1/80000
+EPSILON = 9.0
+DELTA = 1/76205
 privacy_engine = PrivacyEngine()
 
 def accuracy(preds, labels):
@@ -103,7 +104,7 @@ def main(hparams):
                               train_aug=False)
     # model
     out_name = 'nonli-resnetdp-all'
-    out_dir = 'chexpert/diseasedp/' + out_name
+    out_dir = f'chexpert_new/diseasedp/batch_{batch_size}_epochs_{epochs}_lr_{learning_rate}_target_epsilon_{EPSILON}_target delta_{DELTA}_max grad norm_{MAX_GRAD_NORM}_{out_name}'
     
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -116,8 +117,8 @@ def main(hparams):
         sample = data.train_set.get_sample(idx)
         imsave(os.path.join(temp_dir, 'sample_' + str(idx) + '.jpg'), sample['image'].astype(np.uint8))
     model_type = NonLiResNetDP
-    writer= SummaryWriter(log_dir=f'chexpert/diseasedp/batch_{batch_size}_epochs_{epochs}_target_epsilon_{EPSILON}_target delta_{DELTA}_max grad norm_{MAX_GRAD_NORM}_{out_name}')
-    model = model_type(num_classes=num_classes,epochs = epochs, writer=writer)
+    writer= SummaryWriter(log_dir=out_dir)
+    model = model_type(num_classes=num_classes,epochs = epochs, writer=writer,learning_rate=learning_rate)
     # Load pre-trained weights from the original ResNet-18
     pretrained_resnet18 = models.resnet18(weights='ResNet18_Weights.DEFAULT')
     new_state_dict = {}
