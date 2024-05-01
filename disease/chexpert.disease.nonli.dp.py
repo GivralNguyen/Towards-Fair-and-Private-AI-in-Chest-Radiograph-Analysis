@@ -18,16 +18,9 @@ import torch.nn.functional as F
 from opacus.utils.batch_memory_manager import BatchMemoryManager
 image_size = (224, 224)
 num_classes = 14
-batch_size = 4096
-epochs = 100
-max_physical_batch_size = 256
-num_workers = 4
-img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
-learning_rate = 0.001 #deepmind
 torch.set_float32_matmul_precision('high')
-MAX_GRAD_NORM = 1.2
-EPSILON = 9.0
 DELTA = 1/76205
+img_data_dir = '/vol/aimspace/projects/CheXpert/CheXpert/'
 privacy_engine = PrivacyEngine()
 
 def accuracy(preds, labels):
@@ -91,6 +84,14 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch):
 def main(hparams):
     # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
     pl.seed_everything(42, workers=True)
+    batch_size = hparams.batch_size
+    epochs = hparams.epochs
+    max_physical_batch_size = hparams.max_physical_batch_size
+    num_workers = hparams.num_workers
+    learning_rate = hparams.learning_rate
+    EPSILON = hparams.EPSILON
+    DELTA = hparams.DELTA
+    MAX_GRAD_NORM = hparams.MAX_GRAD_NORM
     # data
     data = CheXpertDataModule(csv_train_img='../data/chexpert.sample.train.csv',
                               csv_val_img='../data/chexpert.sample.val.csv',
@@ -188,30 +189,45 @@ def main(hparams):
 
     print('EMBEDDINGS')
 
-    # model.remove_head()
+    model._module.remove_head()
 
-    # embeds_val, targets_val = embeddings(model, data.val_dataloader(), device)
-    # df = pd.DataFrame(data=embeds_val)
-    # df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
-    # df = pd.concat([df, df_targets], axis=1)
-    # df.to_csv(os.path.join(writer.log_dir, 'embeddings.val.csv'), index=False)
+    embeds_val, targets_val = embeddings(model, data.val_dataloader(), device)
+    df = pd.DataFrame(data=embeds_val)
+    df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
+    df = pd.concat([df, df_targets], axis=1)
+    df.to_csv(os.path.join(writer.log_dir, 'embeddings.val.csv'), index=False)
 
-    # embeds_test, targets_test = embeddings(model, data.test_dataloader(), device)
-    # df = pd.DataFrame(data=embeds_test)
-    # df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
-    # df = pd.concat([df, df_targets], axis=1)
-    # df.to_csv(os.path.join(writer.log_dir, 'embeddings.test.csv'), index=False)
+    embeds_test, targets_test = embeddings(model, data.test_dataloader(), device)
+    df = pd.DataFrame(data=embeds_test)
+    df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
+    df = pd.concat([df, df_targets], axis=1)
+    df.to_csv(os.path.join(writer.log_dir, 'embeddings.test.csv'), index=False)
 
-    # embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
-    # df = pd.DataFrame(data=embeds_test_resample)
-    # df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
-    # df = pd.concat([df, df_targets], axis=1)
-    # df.to_csv(os.path.join(writer.log_dir, 'embeddings.resample.test.csv'), index=False)
+    embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
+    df = pd.DataFrame(data=embeds_test_resample)
+    df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
+    df = pd.concat([df, df_targets], axis=1)
+    df.to_csv(os.path.join(writer.log_dir, 'embeddings.resample.test.csv'), index=False)
 
 
 if __name__ == '__main__':
+    batch_size = 4096 #
+    epochs = 150 # 
+    max_physical_batch_size = 256
+    num_workers = 4
+    learning_rate = 0.001 #deepmind
+    MAX_GRAD_NORM = 1.2
+    EPSILON = 1.2
     parser = ArgumentParser()
     parser.add_argument('--accelerator', default="gpu")
+    parser.add_argument('--batch_size', type=int, default=batch_size)
+    parser.add_argument('--epochs', type=int, default=epochs)
+    parser.add_argument('--max_physical_batch_size', type=int, default=max_physical_batch_size)
+    parser.add_argument('--num_workers', type=int, default=num_workers)
+    parser.add_argument('--learning_rate', type=float, default=learning_rate)
+    parser.add_argument('--EPSILON', type=float, default=EPSILON)
+    parser.add_argument('--DELTA', type=float, default=DELTA)
+    parser.add_argument('--MAX_GRAD_NORM', type=float, default=MAX_GRAD_NORM)
     args = parser.parse_args()
-
-    main(args)
+    
+    main(args)  

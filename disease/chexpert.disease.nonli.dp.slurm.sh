@@ -24,5 +24,17 @@
 # conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
 # source activate ngq # If this does not work, try 'source activate ptl'
  
-# run the program
-python chexpert.disease.nonli.dp.py --accelerator gpu
+# Parameters to search over
+epochs=(150 200)
+learning_rates=(0.001)
+EPSILONs=(0.05 0.08)
+
+# Loop over parameter combinations
+for epoch in "${epochs[@]}"; do
+    for lr in "${learning_rates[@]}"; do
+        for epsilon in "${EPSILONs[@]}"; do
+            # Run the program
+            python chexpert.disease.nonli.dp.py --accelerator gpu --epochs "$epoch" --learning_rate "$lr" --EPSILON "$epsilon"
+        done
+    done
+done
