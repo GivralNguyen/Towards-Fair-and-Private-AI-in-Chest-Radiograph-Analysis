@@ -78,12 +78,15 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
+        print(
+            f"Save model. Best Val Loss: {val_loss:.6f} "
+        )
     writer.add_scalar('Validation/Loss', val_loss, epoch)
 
 
 def main(hparams):
     # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
-    pl.seed_everything(42, workers=True)
+    pl.seed_everything(hparams.seed, workers=True)
     batch_size = hparams.batch_size
     epochs = hparams.epochs
     max_physical_batch_size = hparams.max_physical_batch_size
@@ -105,11 +108,21 @@ def main(hparams):
                               train_aug=False)
     # model
     out_name = 'nonli-resnetdp-all'
-    out_dir = f'chexpert_new/diseasedp/batch_{batch_size}_epochs_{epochs}_lr_{learning_rate}_target_epsilon_{EPSILON}_target delta_{DELTA}_max grad norm_{MAX_GRAD_NORM}_{out_name}'
+    out_dir = f'chexpert_new/diseasefull/batch_{batch_size}_epochs_{epochs}_lr_{learning_rate}_target_epsilon_{EPSILON}_target delta_{DELTA}_max grad norm_{MAX_GRAD_NORM}_{out_name}'
     
+    # Function to create a new directory with a suffix if the directory already exists
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-
+    else:
+        ver = 0
+        new_dir_path = f"{out_dir}_ver{ver}"
+        while os.path.exists(new_dir_path):
+            ver += 1
+            new_dir_path = f"{out_dir}_ver{ver}"
+        os.makedirs(new_dir_path)
+        
+        out_dir = new_dir_path
+        print("creating new save dir "+str(out_dir))
     temp_dir = os.path.join(out_dir, 'temp')
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
@@ -228,6 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--EPSILON', type=float, default=EPSILON)
     parser.add_argument('--DELTA', type=float, default=DELTA)
     parser.add_argument('--MAX_GRAD_NORM', type=float, default=MAX_GRAD_NORM)
+    parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
     
     main(args)  

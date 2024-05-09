@@ -31,7 +31,7 @@
 
 epochs=(75 100 125 150)
 learning_rates=(0.00075 0.001 0.0015 0.002)
-EPSILONs=(0.1)
+EPSILONs=(1)
 num_runs=1
 # Loop over parameter combinations
 for epoch in "${epochs[@]}"; do
