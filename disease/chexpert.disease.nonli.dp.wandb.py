@@ -248,7 +248,11 @@ def main(config=None):
         print("before releasing memory")
         print(torch.cuda.memory_summary())
         del model, optimizer, train_loader, data, privacy_engine, loaded_state_dict
-        del preds_val, targets_val, logits_val, preds_test, targets_test, logits_test, preds_test_resample, targets_test_resample, logits_test_resample ,embeds_val, targets_val, embeds_test, targets_test, embeds_test_resample, targets_test_resample
+        del preds_val, targets_val, logits_val
+        del preds_test, targets_test, logits_test
+        del preds_test_resample, targets_test_resample, logits_test_resample
+        del embeds_val, embeds_test, embeds_test_resample
+        del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
         torch.cuda.empty_cache()
         gc.collect()
         print("after releasing memory")

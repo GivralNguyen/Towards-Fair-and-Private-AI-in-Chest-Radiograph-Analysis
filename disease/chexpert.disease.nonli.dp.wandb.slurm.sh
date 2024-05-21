@@ -16,4 +16,4 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=cobainnguyen@gmail.com
 # run the program
-python chexpert.disease.nonli.dp.wandb.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_1_minvaloss_test_fast.yml
+python chexpert.disease.nonli.dp.wandb.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_1_minvaloss.yml
