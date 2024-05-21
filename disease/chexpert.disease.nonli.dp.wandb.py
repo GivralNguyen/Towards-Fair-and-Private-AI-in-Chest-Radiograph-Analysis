@@ -19,6 +19,7 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 import yaml
 import wandb
 import gc
+from sklearn.metrics import roc_curve, auc, recall_score
 image_size = (224, 224)
 num_classes = 14
 torch.set_float32_matmul_precision('high')
@@ -36,9 +37,11 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
 
     model.train()
     losses = []
+    preds = []
+    targets = []
     # top1_acc = []
     best_val_loss = float('inf')  # Initialize with a large value  
-    
+    best_val_roc_auc = 0 
     with BatchMemoryManager(
         data_loader=train_loader, 
         max_physical_batch_size=max_physical_batch_size, 
@@ -52,34 +55,46 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             output = model(input_data)
             prob = torch.sigmoid(output)
             loss = F.binary_cross_entropy(prob, labels)
-            # preds = np.argmax(output.detach().cpu().numpy(), axis=1)
-            # print(preds,labels)
-            # acc = accuracy(preds, labels)
             losses.append(loss.item())
-            # top1_acc.append(acc)
+            preds.append(prob)
+            targets.append(labels)
             loss.backward()
             optimizer.step()
             train_bar.set_postfix({'Loss': loss.item()})
+
+        preds = torch.cat(preds, dim=0).cpu().detach().numpy()
+        targets = np.array(torch.cat(targets, dim=0).cpu().detach().numpy())
+        target_fpr = 0.2
+        fpr, tpr, thres = roc_curve(targets, preds)
+        roc_auc = auc(fpr, tpr)
+        op = thres[np.argmin(np.abs(fpr-target_fpr))]
+        fpr_t = 1 - recall_score(targets, preds>=op, pos_label=0)
+        tpr_t = recall_score(targets, preds>=op, pos_label=1)
         epsilon = privacy_engine.get_epsilon(DELTA)
         print(
             f"\tTrain Epoch: {epoch} \t"
             f"Loss: {np.mean(losses):.6f} "
-            # f"Acc@1: {np.mean(top1_acc) * 100:.6f} "
-            f"(ε = {epsilon:.2f}, δ = {DELTA})"
+            f"roc_auc = {roc_auc:.4f})"
+            f"fpr_t = {fpr_t:.4f})"
+            f"tpr_t = {tpr_t:.4f})"
         )   
-    wandb.log({"Train/Loss": np.mean(losses), "epoch": epoch})    
+    wandb.log({"Train/Loss": np.mean(losses), "epoch": epoch})  
+    wandb.log({"roc_auc": roc_auc, "epoch": epoch}) 
+    wandb.log({"fpr_t": fpr_t, "epoch": epoch}) 
+    wandb.log({"tpr_t": tpr_t, "epoch": epoch})      
     wandb.log({"Epsilon": epsilon, "epoch": epoch})   
     writer.add_scalar('Train/Loss', np.mean(losses), epoch)
     print("before releasing train data and label")
     print(torch.cuda.memory_summary())
-    del input_data, labels
+    del input_data, labels, losses, preds, targets, fpr, tpr, thres, roc_auc, op, fpr_t, tpr_t
     torch.cuda.empty_cache()
     gc.collect()
     print("after releasing train data and label")
     print(torch.cuda.memory_summary())
     model.eval()
     val_losses = []
-
+    val_preds = []
+    val_targets = []
     with torch.no_grad():
         for batch in val_loader:
             input_data, labels = batch['image'].to('cuda'), batch['label'].to('cuda')
@@ -87,19 +102,56 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             prob = torch.sigmoid(output)
             val_loss_ = (F.binary_cross_entropy(prob, labels))
             val_losses.append(val_loss_.item())
+            val_preds.append(prob)
+            val_targets.append(labels)
     val_loss = np.mean(val_losses)
+    val_preds = torch.cat(val_preds, dim=0).cpu().detach().numpy()
+    val_targets = np.array(torch.cat(val_targets, dim=0).cpu().detach().numpy())
+    val_target_fpr = 0.2
+    val_fpr, val_tpr, val_thres = roc_curve(val_targets, val_preds)
+    val_roc_auc = auc(val_fpr, val_tpr)
+    val_op = val_thres[np.argmin(np.abs(val_fpr-val_target_fpr))]
+    val_fpr_t = 1 - recall_score(val_targets, val_preds>=val_op, pos_label=0)
+    val_tpr_t = recall_score(val_targets, val_preds>=val_op, pos_label=1)
+    # epsilon = privacy_engine.get_epsilon(DELTA)
+    print(
+        f"\tVal Epoch: {epoch} \t"
+        f"val_loss: {val_loss:.6f} "
+        f"val_roc_auc = {val_roc_auc:.4f})"
+        f"val_fpr_t = {val_fpr_t:.4f})"
+        f"val_tpr_t = {val_tpr_t:.4f})"
+    )   
     # Save checkpoint if validation loss improves
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
+    # if val_loss < best_val_loss:
+    #     best_val_loss = val_loss
+    #     torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
+    #     print(
+    #         f"Save model."
+    #         f"\tVal Epoch: {epoch} \t"
+    #         f"val_loss: {val_loss:.6f} "
+    #         f"val_roc_auc = {val_roc_auc:.4f})"
+    #         f"val_fpr_t = {val_fpr_t:.4f})"
+    #         f"val_tpr_t = {val_tpr_t:.4f})"
+    #     )
+    if val_roc_auc > best_val_roc_auc:
+        best_val_roc_auc = val_roc_auc
         torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
         print(
-            f"Save model. Best Val Loss: {val_loss:.6f} "
+            f"Save model."
+            f"\tVal Epoch: {epoch} \t"
+            f"val_loss: {val_loss:.6f} "
+            f"val_roc_auc = {val_roc_auc:.4f})"
+            f"val_fpr_t = {val_fpr_t:.4f})"
+            f"val_tpr_t = {val_tpr_t:.4f})"
         )
     wandb.log({"val_loss": val_loss, "epoch": epoch})   
+    wandb.log({"val_roc_auc": val_roc_auc, "epoch": epoch}) 
+    wandb.log({"val_fpr_t": val_fpr_t, "epoch": epoch}) 
+    wandb.log({"val_tpr_t": val_tpr_t, "epoch": epoch})      
     writer.add_scalar('val_loss', val_loss, epoch)
     print("before releasing val data and label")
     print(torch.cuda.memory_summary())
-    del input_data, labels
+    del input_data, labels, val_losses , val_preds, val_targets, val_fpr, val_tpr, val_thres, val_roc_auc, val_op, val_fpr_t, val_tpr_t
     torch.cuda.empty_cache()
     gc.collect()
     print("after releasing val data and label")
