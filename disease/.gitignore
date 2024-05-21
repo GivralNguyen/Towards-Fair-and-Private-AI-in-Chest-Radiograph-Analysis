@@ -7,3 +7,4 @@ lightning.py
 test/MNIST/
 metrics/__pycache__/
 disease/__pycache__/
+wandb
