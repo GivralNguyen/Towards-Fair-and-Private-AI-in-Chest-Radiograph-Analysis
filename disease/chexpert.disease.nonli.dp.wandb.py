@@ -19,9 +19,15 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 import yaml
 import wandb
 import gc
-from sklearn.metrics import roc_curve, auc, recall_score
+import sys
+sys.path.append("/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis")
+from metrics.metric_analysis import subgroup_fairness_analysis_train
+
 image_size = (224, 224)
 num_classes = 14
+cols_names_classes = ['class_' + str(i) for i in range(0,num_classes)]
+cols_names_logits = ['logit_' + str(i) for i in range(0, num_classes)]
+cols_names_targets = ['target_' + str(i) for i in range(0, num_classes)]
 torch.set_float32_matmul_precision('high')
 DELTA = 1/76205
 batch_size = 4096 #
@@ -29,19 +35,16 @@ batch_size = 4096 #
 num_workers = 4
 MAX_GRAD_NORM = 1.2
 
-
 def accuracy(preds, labels):
     return (preds == labels).mean()
 
-def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine):
+def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, save_metric, best_metric):
 
     model.train()
     losses = []
+    logits = []
     preds = []
     targets = []
-    # top1_acc = []
-    best_val_loss = float('inf')  # Initialize with a large value  
-    best_val_roc_auc = 0 
     with BatchMemoryManager(
         data_loader=train_loader, 
         max_physical_batch_size=max_physical_batch_size, 
@@ -56,43 +59,62 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             prob = torch.sigmoid(output)
             loss = F.binary_cross_entropy(prob, labels)
             losses.append(loss.item())
+            logits.append(output)
             preds.append(prob)
             targets.append(labels)
             loss.backward()
             optimizer.step()
             train_bar.set_postfix({'Loss': loss.item()})
+    epsilon = privacy_engine.get_epsilon(DELTA)
+    logits = torch.cat(logits, dim=0).detach().cpu().numpy()
+    preds = torch.cat(preds, dim=0).detach().cpu().numpy()
+    targets = torch.cat(targets, dim=0).detach().cpu().numpy()
+    df = pd.DataFrame(data=preds, columns=cols_names_classes)
+    df_logits = pd.DataFrame(data=logits, columns=cols_names_logits)
+    df_targets = pd.DataFrame(data=targets, columns=cols_names_targets)
+    df = pd.concat([df, df_logits, df_targets], axis=1)
+    metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.train.csv",df,False)
+    # Define the groups and metrics to be printed
+    groups = ['All', 'White', 'Asian', 'Black', 'Female', 'Male']
+    metrics_to_print = ['TPR', 'FPR', 'AUC', 'AP']
 
-        preds = torch.cat(preds, dim=0).cpu().detach().numpy()
-        targets = np.array(torch.cat(targets, dim=0).cpu().detach().numpy())
-        target_fpr = 0.2
-        fpr, tpr, thres = roc_curve(targets, preds)
-        roc_auc = auc(fpr, tpr)
-        op = thres[np.argmin(np.abs(fpr-target_fpr))]
-        fpr_t = 1 - recall_score(targets, preds>=op, pos_label=0)
-        tpr_t = recall_score(targets, preds>=op, pos_label=1)
-        epsilon = privacy_engine.get_epsilon(DELTA)
-        print(
-            f"\tTrain Epoch: {epoch} \t"
-            f"Loss: {np.mean(losses):.6f} "
-            f"roc_auc = {roc_auc:.4f})"
-            f"fpr_t = {fpr_t:.4f})"
-            f"tpr_t = {tpr_t:.4f})"
-        )   
-    wandb.log({"Train/Loss": np.mean(losses), "epoch": epoch})  
-    wandb.log({"roc_auc": roc_auc, "epoch": epoch}) 
-    wandb.log({"fpr_t": fpr_t, "epoch": epoch}) 
-    wandb.log({"tpr_t": tpr_t, "epoch": epoch})      
-    wandb.log({"Epsilon": epsilon, "epoch": epoch})   
+    # Print the training metrics
+    print(f"\tTrain Epoch: {epoch} \tTrain Loss: {np.mean(losses):.6f} (ε = {epsilon:.2f}, δ = {DELTA})", end=' ')
+    for group in groups:
+        print(f"({group})", end=' ')
+        for metric in metrics_to_print:
+            print(f"{metric} = {metrics[group][metric]:.4f}", end=' ')
+    print()  # Newline at the end of the print statement
+    # Log metrics to wandb
+    wandb.log({
+        "train_loss": np.mean(losses),
+        "Epsilon": epsilon,
+        "epoch": epoch,
+    })
+
+    # Log demographic-specific metrics
+    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+        wandb.log({
+            f"TPR_{group}": metrics[group]['TPR'],
+            f"FPR_{group}": metrics[group]['FPR'],
+            f"AUC_{group}": metrics[group]['AUC'],
+            f"AP_{group}": metrics[group]['AP'],
+            "epoch": epoch,
+        })
     writer.add_scalar('Train/Loss', np.mean(losses), epoch)
-    print("before releasing train data and label")
-    print(torch.cuda.memory_summary())
-    del input_data, labels, losses, preds, targets, fpr, tpr, thres, roc_auc, op, fpr_t, tpr_t
+    # print("before releasing train data and label")
+    # print(torch.cuda.memory_summary())
+    del df, df_logits, df_targets
+    del metrics
+    del logits, preds, targets
+    del input_data, labels
     torch.cuda.empty_cache()
     gc.collect()
-    print("after releasing train data and label")
-    print(torch.cuda.memory_summary())
+    # print("after releasing train data, metrics and label")
+    # print(torch.cuda.memory_summary())
     model.eval()
     val_losses = []
+    val_logits = []
     val_preds = []
     val_targets = []
     with torch.no_grad():
@@ -102,61 +124,77 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             prob = torch.sigmoid(output)
             val_loss_ = (F.binary_cross_entropy(prob, labels))
             val_losses.append(val_loss_.item())
+            val_logits.append(output)
             val_preds.append(prob)
             val_targets.append(labels)
     val_loss = np.mean(val_losses)
-    val_preds = torch.cat(val_preds, dim=0).cpu().detach().numpy()
-    val_targets = np.array(torch.cat(val_targets, dim=0).cpu().detach().numpy())
-    val_target_fpr = 0.2
-    val_fpr, val_tpr, val_thres = roc_curve(val_targets, val_preds)
-    val_roc_auc = auc(val_fpr, val_tpr)
-    val_op = val_thres[np.argmin(np.abs(val_fpr-val_target_fpr))]
-    val_fpr_t = 1 - recall_score(val_targets, val_preds>=val_op, pos_label=0)
-    val_tpr_t = recall_score(val_targets, val_preds>=val_op, pos_label=1)
-    # epsilon = privacy_engine.get_epsilon(DELTA)
-    print(
-        f"\tVal Epoch: {epoch} \t"
-        f"val_loss: {val_loss:.6f} "
-        f"val_roc_auc = {val_roc_auc:.4f})"
-        f"val_fpr_t = {val_fpr_t:.4f})"
-        f"val_tpr_t = {val_tpr_t:.4f})"
-    )   
+    val_logits = torch.cat(val_logits, dim=0).detach().cpu().numpy()
+    val_preds = torch.cat(val_preds, dim=0).detach().cpu().numpy()
+    val_targets = torch.cat(val_targets, dim=0).detach().cpu().numpy()
+
+    val_df = pd.DataFrame(data=val_preds, columns=cols_names_classes)
+    val_df_logits = pd.DataFrame(data=val_logits, columns=cols_names_logits)
+    val_df_targets = pd.DataFrame(data=val_targets, columns=cols_names_targets)
+    val_df = pd.concat([val_df, val_df_logits, val_df_targets], axis=1)
+    val_metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv",val_df,False)
+    # Print the validation metrics
+    print(f"\Val Epoch: {epoch} \Val Loss: {val_loss:.6f}", end=' ')
+    for group in groups:
+        print(f"({group})", end=' ')
+        for metric in metrics_to_print:
+            print(f"{metric} = {val_metrics[group][metric]:.4f}", end=' ')
+    print()  # Newline at the end of the print statement
+    # Log metrics to wandb
+    wandb.log({
+        "val_loss": val_loss,
+        "epoch": epoch,
+    })
+
+    # Log demographic-specific metrics
+    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+        wandb.log({
+            f"val_TPR_{group}": val_metrics[group]['TPR'],
+            f"val_FPR_{group}": val_metrics[group]['FPR'],
+            f"val_AUC_{group}": val_metrics[group]['AUC'],
+            f"val_AP_{group}": val_metrics[group]['AP'],
+            "epoch": epoch,
+        })
     # Save checkpoint if validation loss improves
-    # if val_loss < best_val_loss:
-    #     best_val_loss = val_loss
-    #     torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
-    #     print(
-    #         f"Save model."
-    #         f"\tVal Epoch: {epoch} \t"
-    #         f"val_loss: {val_loss:.6f} "
-    #         f"val_roc_auc = {val_roc_auc:.4f})"
-    #         f"val_fpr_t = {val_fpr_t:.4f})"
-    #         f"val_tpr_t = {val_tpr_t:.4f})"
-    #     )
-    if val_roc_auc > best_val_roc_auc:
-        best_val_roc_auc = val_roc_auc
-        torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
-        print(
-            f"Save model."
-            f"\tVal Epoch: {epoch} \t"
-            f"val_loss: {val_loss:.6f} "
-            f"val_roc_auc = {val_roc_auc:.4f})"
-            f"val_fpr_t = {val_fpr_t:.4f})"
-            f"val_tpr_t = {val_tpr_t:.4f})"
-        )
-    wandb.log({"val_loss": val_loss, "epoch": epoch})   
-    wandb.log({"val_roc_auc": val_roc_auc, "epoch": epoch}) 
-    wandb.log({"val_fpr_t": val_fpr_t, "epoch": epoch}) 
-    wandb.log({"val_tpr_t": val_tpr_t, "epoch": epoch})      
+    if save_metric == 'minimize_val_loss':
+        best_val_loss = best_metric
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
+            print(
+                f"Save model. Best Val Loss: {val_loss:.6f} "
+            )
+        best_metric = best_val_loss
+    elif save_metric == 'maximize_val_AUC_All':
+        best_val_roc_auc = best_metric
+        if val_metrics['All']['AUC']  > best_val_roc_auc:
+            best_val_roc_auc = val_metrics['All']['AUC'] 
+            torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
+            print(
+                f"Save model."
+                f"Best val_roc_auc = {val_metrics['All']['AUC'] :.4f})"
+            )
+        best_metric = best_val_roc_auc
+    else:
+        raise Exception("Invalid save_metric specified")
     writer.add_scalar('val_loss', val_loss, epoch)
-    print("before releasing val data and label")
-    print(torch.cuda.memory_summary())
-    del input_data, labels, val_losses , val_preds, val_targets, val_fpr, val_tpr, val_thres, val_roc_auc, val_op, val_fpr_t, val_tpr_t
+    writer.add_scalar('val_roc_auc_all', val_metrics['All']['AUC'], epoch)
+    # print("before releasing val data and label")
+    # print(torch.cuda.memory_summary())
+    del input_data, labels
+    del val_df, val_df_logits, val_df_targets
+    del val_metrics, val_loss
+    del val_logits, val_preds, val_targets
     torch.cuda.empty_cache()
     gc.collect()
-    print("after releasing val data and label")
-    print(torch.cuda.memory_summary())
-    gc.collect()
+    # print("after releasing val data, metrics and label")
+    # print(torch.cuda.memory_summary())
+    return best_metric
+    
 
 
 def main(config=None):
@@ -180,7 +218,7 @@ def main(config=None):
                                 max_physical_batch_size=config.max_physical_batch_size,
                                 num_workers=num_workers,
                                 train_aug=False)
-        # model
+        # modelminimize_val_loss
         out_name = config.out_name
         out_dir = f'{config.save_root}batch_{batch_size}_epochs_{epochs}_lr_{learning_rate}_target_epsilon_{EPSILON}_target delta_{DELTA}_max grad norm_{MAX_GRAD_NORM}_{out_name}'
         
@@ -234,8 +272,14 @@ def main(config=None):
             )
 
         print(f"Using sigma={optimizer.noise_multiplier}, config = {writer.log_dir}")
+        if config.save_metric == 'minimize_val_loss':
+            best_metric = float('inf')  
+        elif  config.save_metric == 'maximize_val_AUC_All':
+            best_metric = 0 
+        else:
+            raise Exception("Invalid save_metric specified")
         for epoch in tqdm(range(epochs), desc="Epoch", unit="epoch"):
-            train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine)
+            best_metric = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, save_metric = config.save_metric, best_metric = best_metric)
         # train_model(model,train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer)
         loaded_state_dict = torch.load(f'{writer.log_dir}/best_model.pth')
         # new_state_dict = {}
@@ -243,12 +287,6 @@ def main(config=None):
         #     new_key = 'model.' + key
         #     new_state_dict[new_key] = value
         model.load_state_dict(loaded_state_dict)
-
-        
-
-        cols_names_classes = ['class_' + str(i) for i in range(0,num_classes)]
-        cols_names_logits = ['logit_' + str(i) for i in range(0, num_classes)]
-        cols_names_targets = ['target_' + str(i) for i in range(0, num_classes)]
 
         print('VALIDATION')
         preds_val, targets_val, logits_val = test(model, data.val_dataloader(),num_classes, device)
@@ -297,8 +335,8 @@ def main(config=None):
         df.to_csv(os.path.join(writer.log_dir, 'embeddings.resample.test.csv'), index=False)
 
         # cleanup
-        print("before releasing memory")
-        print(torch.cuda.memory_summary())
+        # print("before releasing memory")
+        # print(torch.cuda.memory_summary())
         del model, optimizer, train_loader, data, privacy_engine, loaded_state_dict
         del preds_val, targets_val, logits_val
         del preds_test, targets_test, logits_test
@@ -307,8 +345,8 @@ def main(config=None):
         del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
         torch.cuda.empty_cache()
         gc.collect()
-        print("after releasing memory")
-        print(torch.cuda.memory_summary())
+        # print("after releasing memory")
+        # print(torch.cuda.memory_summary())
 
 
 if __name__ == '__main__':
