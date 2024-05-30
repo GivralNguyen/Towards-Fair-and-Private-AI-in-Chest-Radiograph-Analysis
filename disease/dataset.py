@@ -58,7 +58,6 @@ class CheXpertDataset(Dataset):
         label = torch.from_numpy(sample['label'])
 
         if self.do_augment:
-            print("hey doing aug")
             image = self.augment(image)
 
         if self.pseudo_rgb:

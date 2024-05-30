@@ -260,7 +260,7 @@ def main(config=None):
         
         train_loader = data.train_dataloader()
 
-        print(f"Using sigma={optimizer.noise_multiplier}, config = {writer.log_dir}")
+        print(f"Using config = {writer.log_dir}")
         best_metrics = {}
         best_metrics['max_overall_AUC'] = 0.0
         best_metrics['max_overall_AUC_minus_TPR_gap'] = 0.0
@@ -268,7 +268,7 @@ def main(config=None):
         best_metrics['max_worse_case_group_TPR'] = 0.0
         
         for epoch in tqdm(range(epochs), desc="Epoch", unit="epoch"):
-            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics)
+            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, best_metrics = best_metrics)
         # train_model(model,train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer)
 
         for metric_name, metric_value in best_metrics.items():
