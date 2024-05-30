@@ -222,7 +222,7 @@ def main(config=None):
                                 image_size=image_size,
                                 pseudo_rgb=True,
                                 batch_size=config.batch_size,
-                                max_physical_batch_size=config.max_physical_batch_size,
+                                max_physical_batch_size=config.batch_size,
                                 num_workers=num_workers,
                                 train_aug=True)
         # modelminimize_val_loss
