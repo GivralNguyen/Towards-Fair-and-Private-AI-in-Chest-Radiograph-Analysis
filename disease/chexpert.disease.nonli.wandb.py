@@ -227,7 +227,7 @@ def main(config=None):
                                 train_aug=True)
         # modelminimize_val_loss
         out_name = config.out_name
-        out_dir = f'{config.save_root}batch_{config.batch_size,}_epochs_{epochs}_lr_{learning_rate}_non_private_{out_name}'
+        out_dir = f'{config.save_root}batch_{config.batch_size}_epochs_{epochs}_lr_{learning_rate}_non_private_{out_name}'
         
         # Function to create a new directory with a suffix if the directory already exists
         if not os.path.exists(out_dir):
