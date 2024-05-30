@@ -1,18 +1,17 @@
-program: chexpert.disease.nonli.dp.wandb.py
-name: sweep_epsilon_1_minvalloss_test
+name: sweep_epsilon_0.1_maximize_val_AUC_minus_FPR
 method: grid
 metric:
- goal: minimize
- name: val_loss
+ goal: maximize
+ name: overall_AUC_minus_TPR_gap
 parameters:
 #  optimizer:
 #   values: ["adam", "sgd"]
  epochs:
-  values: [5, 7, 10, 12, 15]
+  values: [50, 75, 100, 125]
  learning_rate:
   values: [0.0005, 0.00075, 0.001, 0.00125]
  EPSILON:
-  value: 1
+  value: 0.1
  seed:
   values: [42]
  max_physical_batch_size:
@@ -20,4 +19,4 @@ parameters:
  out_name:
   value: 'nonli-resnetdp-all'
  save_root:
-  value: 'chexpert_new/diseasewandb_minvalloss_test/'
+  value: 'chexpert_wandb/disease_wandb_sweep_epsilon_0.1_maximize_val_AUC_minus_FPR/'

@@ -20,9 +20,12 @@ import yaml
 import wandb
 import gc
 import sys
+import copy
 sys.path.append("/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis")
 from metrics.metric_analysis import subgroup_fairness_analysis_train
-
+from functools import partialmethod
+tqdm.__init__ = partialmethod(tqdm.__init__, disable=True) #shut tqdm up
+ 
 image_size = (224, 224)
 num_classes = 14
 cols_names_classes = ['class_' + str(i) for i in range(0,num_classes)]
@@ -35,16 +38,13 @@ batch_size = 4096 #
 num_workers = 4
 MAX_GRAD_NORM = 1.2
 
-def accuracy(preds, labels):
-    return (preds == labels).mean()
-
-def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, save_metric, best_metric):
+def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, best_metrics):
 
     model.train()
     losses = []
-    logits = []
-    preds = []
-    targets = []
+    # logits = []
+    # preds = []
+    # targets = []
     with BatchMemoryManager(
         data_loader=train_loader, 
         max_physical_batch_size=max_physical_batch_size, 
@@ -59,32 +59,32 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             prob = torch.sigmoid(output)
             loss = F.binary_cross_entropy(prob, labels)
             losses.append(loss.item())
-            logits.append(output)
-            preds.append(prob)
-            targets.append(labels)
+            # logits.append(output)
+            # preds.append(prob)
+            # targets.append(labels)
             loss.backward()
             optimizer.step()
             train_bar.set_postfix({'Loss': loss.item()})
     epsilon = privacy_engine.get_epsilon(DELTA)
-    logits = torch.cat(logits, dim=0).detach().cpu().numpy()
-    preds = torch.cat(preds, dim=0).detach().cpu().numpy()
-    targets = torch.cat(targets, dim=0).detach().cpu().numpy()
-    df = pd.DataFrame(data=preds, columns=cols_names_classes)
-    df_logits = pd.DataFrame(data=logits, columns=cols_names_logits)
-    df_targets = pd.DataFrame(data=targets, columns=cols_names_targets)
-    df = pd.concat([df, df_logits, df_targets], axis=1)
-    metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.train.csv",df,False)
-    # Define the groups and metrics to be printed
+    # logits = torch.cat(logits, dim=0).detach().cpu().numpy()
+    # preds = torch.cat(preds, dim=0).detach().cpu().numpy()
+    # targets = torch.cat(targets, dim=0).detach().cpu().numpy()
+    # df = pd.DataFrame(data=preds, columns=cols_names_classes)
+    # df_logits = pd.DataFrame(data=logits, columns=cols_names_logits)
+    # df_targets = pd.DataFrame(data=targets, columns=cols_names_targets)
+    # df = pd.concat([df, df_logits, df_targets], axis=1)
+    # metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.train.csv",df,False)
+    # # Define the groups and metrics to be printed
     groups = ['All', 'White', 'Asian', 'Black', 'Female', 'Male']
     metrics_to_print = ['TPR', 'FPR', 'AUC', 'AP']
 
     # Print the training metrics
     print(f"\tTrain Epoch: {epoch} \tTrain Loss: {np.mean(losses):.6f} (ε = {epsilon:.2f}, δ = {DELTA})", end=' ')
-    for group in groups:
-        print(f"({group})", end=' ')
-        for metric in metrics_to_print:
-            print(f"{metric} = {metrics[group][metric]:.4f}", end=' ')
-    print()  # Newline at the end of the print statement
+    # for group in groups:
+    #     print(f"({group})", end=' ')
+    #     for metric in metrics_to_print:
+    #         print(f"{metric} = {metrics[group][metric]:.4f}", end=' ')
+    # print()  # Newline at the end of the print statement
     # Log metrics to wandb
     wandb.log({
         "train_loss": np.mean(losses),
@@ -93,23 +93,23 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     })
 
     # Log demographic-specific metrics
-    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
-        wandb.log({
-            f"TPR_{group}": metrics[group]['TPR'],
-            f"FPR_{group}": metrics[group]['FPR'],
-            f"AUC_{group}": metrics[group]['AUC'],
-            f"AP_{group}": metrics[group]['AP'],
-            "epoch": epoch,
-        })
-    writer.add_scalar('Train/Loss', np.mean(losses), epoch)
+    # for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+    #     wandb.log({
+    #         f"TPR_{group}": metrics[group]['TPR'],
+    #         f"FPR_{group}": metrics[group]['FPR'],
+    #         f"AUC_{group}": metrics[group]['AUC'],
+    #         f"AP_{group}": metrics[group]['AP'],
+    #         "epoch": epoch,
+    #     })
+    # writer.add_scalar('Train/Loss', np.mean(losses), epoch)
     # print("before releasing train data and label")
     # print(torch.cuda.memory_summary())
-    del df, df_logits, df_targets
-    del metrics
-    del logits, preds, targets
-    del input_data, labels
-    torch.cuda.empty_cache()
-    gc.collect()
+    # del df, df_logits, df_targets
+    # del metrics
+    # del logits, preds, targets
+    # del input_data, labels
+    # torch.cuda.empty_cache()
+    # gc.collect()
     # print("after releasing train data, metrics and label")
     # print(torch.cuda.memory_summary())
     model.eval()
@@ -137,63 +137,130 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     val_df_targets = pd.DataFrame(data=val_targets, columns=cols_names_targets)
     val_df = pd.concat([val_df, val_df_logits, val_df_targets], axis=1)
     val_metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv",val_df,False)
-    # Print the validation metrics
-    print(f"\Val Epoch: {epoch} \Val Loss: {val_loss:.6f}", end=' ')
-    for group in groups:
-        print(f"({group})", end=' ')
-        for metric in metrics_to_print:
-            print(f"{metric} = {val_metrics[group][metric]:.4f}", end=' ')
-    print()  # Newline at the end of the print statement
+    
     # Log metrics to wandb
     wandb.log({
         "val_loss": val_loss,
         "epoch": epoch,
     })
+    # Initialize variables to store TPR and AUC values
+    tprs = []
+    aucs = []
+    # Dictionary to map subgroup names to TPR values for easy retrieval
+    tpr_dict = {}
 
+    # Iterate over subgroups to gather TPR and AUC values
+    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+        tpr = val_metrics[group]['TPR']
+        auc = val_metrics[group]['AUC']
+        tprs.append(tpr)
+        aucs.append(auc)
+        tpr_dict[group] = tpr
+
+    # Calculate the largest TPR gap between subgroups
+    largest_tpr_gap = max(tprs) - min(tprs)
+
+    # Find the worst subgroup TPR
+    worst_tpr = min(tprs)
+    worst_tpr_subgroup = min(tpr_dict, key=tpr_dict.get)
+    overall_AUC_minus_TPR_gap = val_metrics['All']['AUC'] - largest_tpr_gap
     # Log demographic-specific metrics
     for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
         wandb.log({
             f"val_TPR_{group}": val_metrics[group]['TPR'],
-            f"val_FPR_{group}": val_metrics[group]['FPR'],
+            # f"val_FPR_{group}": val_metrics[group]['FPR'],
             f"val_AUC_{group}": val_metrics[group]['AUC'],
-            f"val_AP_{group}": val_metrics[group]['AP'],
+            # f"val_AP_{group}": val_metrics[group]['AP'],
             "epoch": epoch,
         })
+
+    wandb.log({
+        "largest_tpr_gap": largest_tpr_gap,
+        "worst_tpr": worst_tpr,
+        # "worst_tpr_subgroup": worst_tpr_subgroup,
+        "overall_AUC_minus_TPR_gap": overall_AUC_minus_TPR_gap,
+        "epoch": epoch,
+    })
+
+    print(f"\Val Epoch: {epoch} \Val Loss: {val_loss:.6f}", end=' ')
+    # Print subgroup-specific metrics
+    for group in groups:
+        print(f"({group})", end=' ')
+        for metric in metrics_to_print:
+            print(f"{metric} = {val_metrics[group][metric]:.4f}", end=' ')
+
+    # Print additional fairness metrics
+    print("\n")
+    print(f"Largest TPR gap: {largest_tpr_gap:.4f}")
+    print(f"Worst subgroup TPR: {worst_tpr:.4f}")
+    print(f"The group with worst TPR: {worst_tpr_subgroup}")
+    print(f"overall_AUC_minus_TPR_gap: {overall_AUC_minus_TPR_gap:.4f}")
+    
     # Save checkpoint if validation loss improves
-    if save_metric == 'minimize_val_loss':
-        best_val_loss = best_metric
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
-            print(
-                f"Save model. Best Val Loss: {val_loss:.6f} "
-            )
-        best_metric = best_val_loss
-    elif save_metric == 'maximize_val_AUC_All':
-        best_val_roc_auc = best_metric
-        if val_metrics['All']['AUC']  > best_val_roc_auc:
-            best_val_roc_auc = val_metrics['All']['AUC'] 
-            torch.save(model.state_dict(), f'{writer.log_dir}/best_model.pth')
-            print(
-                f"Save model."
-                f"Best val_roc_auc = {val_metrics['All']['AUC'] :.4f})"
-            )
-        best_metric = best_val_roc_auc
-    else:
-        raise Exception("Invalid save_metric specified")
-    writer.add_scalar('val_loss', val_loss, epoch)
-    writer.add_scalar('val_roc_auc_all', val_metrics['All']['AUC'], epoch)
+    # best_metrics['max_overall_AUC'] = 0.0
+    #     best_metrics['max_overall_AUC-TPR_gap'] = 0.0
+    #     best_metrics['min_TPR_gap'] = float('inf')
+    #     best_metrics['max_worse_case_group_TPR'] = float('inf')
+
+    max_val_roc_auc = best_metrics['max_overall_AUC'] 
+    if val_metrics['All']['AUC']  > max_val_roc_auc:
+        max_val_roc_auc = val_metrics['All']['AUC'] 
+        os.makedirs(f'{writer.log_dir}/max_overall_AUC', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_overall_AUC/best_model.pth')
+        print(
+            f"Save model max val_roc_auc."
+            f"Max val_roc_auc = {val_metrics['All']['AUC'] :.4f})"
+        )
+        best_metrics['max_overall_AUC']  = max_val_roc_auc
+
+    max_worse_case_group_TPR = best_metrics['max_worse_case_group_TPR'] 
+    if worst_tpr  > max_worse_case_group_TPR:
+        max_worse_case_group_TPR = worst_tpr
+        os.makedirs(f'{writer.log_dir}/max_worse_case_group_TPR', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_worse_case_group_TPR/best_model.pth')
+        print(
+            f"Save model max_worse_case_group_TPR."
+            f"max_worse_case_group_TPR= {worst_tpr :.4f})"
+        )
+        best_metrics['max_worse_case_group_TPR']  = max_worse_case_group_TPR
+
+    min_largest_TPR_gap = best_metrics['min_largest_TPR_gap'] 
+    if largest_tpr_gap  < min_largest_TPR_gap:
+        min_largest_TPR_gap = largest_tpr_gap
+        os.makedirs(f'{writer.log_dir}/min_largest_TPR_gap', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/min_largest_TPR_gap/best_model.pth')
+        print(
+            f"Save model min_largest_TPR_gap."
+            f"min_largest_TPR_gap= {largest_tpr_gap :.4f})"
+        )
+        best_metrics['min_largest_TPR_gap']  = min_largest_TPR_gap
+    
+    max_overall_AUC_minus_TPR_gap = best_metrics['max_overall_AUC_minus_TPR_gap'] 
+    if overall_AUC_minus_TPR_gap  > max_overall_AUC_minus_TPR_gap:
+        max_overall_AUC_minus_TPR_gap = overall_AUC_minus_TPR_gap
+        os.makedirs(f'{writer.log_dir}/max_overall_AUC_minus_TPR_gap', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_overall_AUC_minus_TPR_gap/best_model.pth')
+        print(
+            f"Save model max_overall_AUC_minus_TPR_gap"
+            f"max_overall_AUC_minus_TPR_gap= {overall_AUC_minus_TPR_gap :.4f})"
+        )
+        best_metrics['max_overall_AUC_minus_TPR_gap']  = max_overall_AUC_minus_TPR_gap
+
+    # writer.add_scalar('val_loss', val_loss, epoch)
+    # writer.add_scalar('val_roc_auc_all', val_metrics['All']['AUC'], epoch)
     # print("before releasing val data and label")
     # print(torch.cuda.memory_summary())
     del input_data, labels
     del val_df, val_df_logits, val_df_targets
     del val_metrics, val_loss
     del val_logits, val_preds, val_targets
+    del largest_tpr_gap, worst_tpr
+    del tprs, aucs
     torch.cuda.empty_cache()
     gc.collect()
     # print("after releasing val data, metrics and label")
     # print(torch.cuda.memory_summary())
-    return best_metric
+    return best_metrics
     
 
 
@@ -251,6 +318,7 @@ def main(config=None):
         for key, value in pretrained_resnet18.state_dict().items():
             new_key = "model." + key  # You may need to adjust this based on your model's structure
             new_state_dict[new_key] = value
+        # print(model)
         new_state_dict_without_fc = {k: v for k, v in new_state_dict.items() if 'fc' not in k}
         model.load_state_dict(new_state_dict_without_fc, strict=False)
 
@@ -272,82 +340,84 @@ def main(config=None):
             )
 
         print(f"Using sigma={optimizer.noise_multiplier}, config = {writer.log_dir}")
-        if config.save_metric == 'minimize_val_loss':
-            best_metric = float('inf')  
-        elif  config.save_metric == 'maximize_val_AUC_All':
-            best_metric = 0 
-        else:
-            raise Exception("Invalid save_metric specified")
+        best_metrics = {}
+        best_metrics['max_overall_AUC'] = 0.0
+        best_metrics['max_overall_AUC_minus_TPR_gap'] = 0.0
+        best_metrics['min_largest_TPR_gap'] = float('inf')
+        best_metrics['max_worse_case_group_TPR'] = 0.0
+        
         for epoch in tqdm(range(epochs), desc="Epoch", unit="epoch"):
-            best_metric = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, save_metric = config.save_metric, best_metric = best_metric)
+            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics)
         # train_model(model,train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer)
-        loaded_state_dict = torch.load(f'{writer.log_dir}/best_model.pth')
-        # new_state_dict = {}
-        # for key, value in loaded_state_dict.items():
-        #     new_key = 'model.' + key
-        #     new_state_dict[new_key] = value
-        model.load_state_dict(loaded_state_dict)
 
-        print('VALIDATION')
-        preds_val, targets_val, logits_val = test(model, data.val_dataloader(),num_classes, device)
-        df = pd.DataFrame(data=preds_val, columns=cols_names_classes)
-        df_logits = pd.DataFrame(data=logits_val, columns=cols_names_logits)
-        df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
-        df = pd.concat([df, df_logits, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'predictions.val.csv'), index=False)
+        for metric_name, metric_value in best_metrics.items():
+            loaded_state_dict = torch.load(f'{writer.log_dir}/{metric_name}/best_model.pth')
+            model.load_state_dict(loaded_state_dict)
+            print(f'{writer.log_dir}/{metric_name}/best_model.pth')
+            print('VALIDATION')
+            preds_val, targets_val, logits_val = test(model, data.val_dataloader(),num_classes, device)
+            df = pd.DataFrame(data=preds_val, columns=cols_names_classes)
+            df_logits = pd.DataFrame(data=logits_val, columns=cols_names_logits)
+            df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
+            df = pd.concat([df, df_logits, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.val.csv', index=False)
 
-        print('TESTING')
-        preds_test, targets_test, logits_test = test(model, data.test_dataloader(), num_classes, device)
-        df = pd.DataFrame(data=preds_test, columns=cols_names_classes)
-        df_logits = pd.DataFrame(data=logits_test, columns=cols_names_logits)
-        df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
-        df = pd.concat([df, df_logits, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'predictions.test.csv'), index=False)
+            print('TESTING')
+            preds_test, targets_test, logits_test = test(model, data.test_dataloader(), num_classes, device)
+            df = pd.DataFrame(data=preds_test, columns=cols_names_classes)
+            df_logits = pd.DataFrame(data=logits_test, columns=cols_names_logits)
+            df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
+            df = pd.concat([df, df_logits, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.test.csv', index=False)
 
-        print('TESTING RESAMPLE')
-        preds_test_resample, targets_test_resample, logits_test_resample = test(model, data.test_resample_dataloader(),num_classes, device)
-        df = pd.DataFrame(data=preds_test_resample, columns=cols_names_classes)
-        df_logits = pd.DataFrame(data=logits_test_resample, columns=cols_names_logits)
-        df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
-        df = pd.concat([df, df_logits, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'predictions.resample.test.csv'), index=False)
+            print('TESTING RESAMPLE')
+            preds_test_resample, targets_test_resample, logits_test_resample = test(model, data.test_resample_dataloader(),num_classes, device)
+            df = pd.DataFrame(data=preds_test_resample, columns=cols_names_classes)
+            df_logits = pd.DataFrame(data=logits_test_resample, columns=cols_names_logits)
+            df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
+            df = pd.concat([df, df_logits, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.resample.test.csv', index=False)
 
-        print('EMBEDDINGS')
+            print('EMBEDDINGS')
+            # print(model)
+            head = model._module.remove_head()
+            # print(model)
+            embeds_val, targets_val = embeddings(model, data.val_dataloader(), device)
+            df = pd.DataFrame(data=embeds_val)
+            df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
+            df = pd.concat([df, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.val.csv', index=False)
 
-        model._module.remove_head()
+            embeds_test, targets_test = embeddings(model, data.test_dataloader(), device)
+            df = pd.DataFrame(data=embeds_test)
+            df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
+            df = pd.concat([df, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.test.csv', index=False)
 
-        embeds_val, targets_val = embeddings(model, data.val_dataloader(), device)
-        df = pd.DataFrame(data=embeds_val)
-        df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
-        df = pd.concat([df, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'embeddings.val.csv'), index=False)
-
-        embeds_test, targets_test = embeddings(model, data.test_dataloader(), device)
-        df = pd.DataFrame(data=embeds_test)
-        df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
-        df = pd.concat([df, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'embeddings.test.csv'), index=False)
-
-        embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
-        df = pd.DataFrame(data=embeds_test_resample)
-        df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
-        df = pd.concat([df, df_targets], axis=1)
-        df.to_csv(os.path.join(writer.log_dir, 'embeddings.resample.test.csv'), index=False)
-
-        # cleanup
-        # print("before releasing memory")
-        # print(torch.cuda.memory_summary())
+            embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
+            df = pd.DataFrame(data=embeds_test_resample)
+            df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
+            df = pd.concat([df, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.resample.test.csv', index=False)
+            # print(model)
+            model._module.restore_head(head)
+            # print(model)
+            # cleanup
+            # print("before releasing memory")
+            # print(torch.cuda.memory_summary())
+            del preds_val, targets_val, logits_val
+            del preds_test, targets_test, logits_test
+            del preds_test_resample, targets_test_resample, logits_test_resample
+            del embeds_val, embeds_test, embeds_test_resample
+            # del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
+            torch.cuda.empty_cache()
+            gc.collect()
+            # print("after releasing memory")
+            # print(torch.cuda.memory_summary())
         del model, optimizer, train_loader, data, privacy_engine, loaded_state_dict
-        del preds_val, targets_val, logits_val
-        del preds_test, targets_test, logits_test
-        del preds_test_resample, targets_test_resample, logits_test_resample
-        del embeds_val, embeds_test, embeds_test_resample
         del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
         torch.cuda.empty_cache()
         gc.collect()
-        # print("after releasing memory")
-        # print(torch.cuda.memory_summary())
-
 
 if __name__ == '__main__':
     parser = ArgumentParser()

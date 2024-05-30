@@ -8,3 +8,5 @@ test/MNIST/
 metrics/__pycache__/
 disease/__pycache__/
 wandb
+chexpert_wandb
+output

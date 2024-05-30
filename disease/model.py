@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torchvision.models import resnet18
-
+import copy
 from tqdm import tqdm
 from opacus.utils.batch_memory_manager import BatchMemoryManager
 # Instantiate the custom model
@@ -21,12 +21,16 @@ class NonLiResNet(nn.Module):
         # freeze_model(self.model)
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, self.num_classes)
-
-
+    
     def remove_head(self):
         num_features = self.model.fc.in_features
         id_layer = nn.Identity(num_features)
+        head = self.model.fc
         self.model.fc = id_layer
+        return head 
+    
+    def restore_head(self, head):
+        self.model.fc = head
 
     def forward(self, x):
         return self.model.forward(x)
