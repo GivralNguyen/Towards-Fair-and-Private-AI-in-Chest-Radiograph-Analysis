@@ -15,4 +15,4 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=cobainnguyen@gmail.com
 # run the program
-python chexpert.disease.nonli.dp.wandb.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_0.1_maximize_val_AUC_minus_FPR.yml
+python chexpert.disease.nonli.dp.wandb.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_0.29_maximize_resample_val_AUC_minus_FPR.yml

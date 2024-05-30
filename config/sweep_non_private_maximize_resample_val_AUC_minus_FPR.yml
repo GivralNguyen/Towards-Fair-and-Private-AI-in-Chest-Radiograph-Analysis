@@ -1,4 +1,4 @@
-name: sweep_non_private_maximize_val_AUC_minus_FPR
+name: sweep_non_private_maximize_resample_val_AUC_minus_FPR
 method: grid
 metric:
  goal: maximize
@@ -17,6 +17,6 @@ parameters:
  out_name:
   value: 'nonli-resnet-all'
  save_root:
-  value: 'chexpert_wandb/disease_wandb_sweep_non_private_maximize_val_AUC_minus_FPR/'
+  value: 'chexpert_wandb/disease_wandb_sweep_non_private_maximize_resample_val_AUC_minus_FPR/'
  val_path:
-  value: '/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv'
+  value: '/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.resample.val.csv'

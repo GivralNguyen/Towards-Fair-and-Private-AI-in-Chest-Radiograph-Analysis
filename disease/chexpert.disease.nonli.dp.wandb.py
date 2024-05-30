@@ -38,7 +38,7 @@ batch_size = 4096 #
 num_workers = 4
 MAX_GRAD_NORM = 1.2
 
-def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, best_metrics):
+def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, best_metrics, val_path):
 
     model.train()
     losses = []
@@ -136,7 +136,7 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     val_df_logits = pd.DataFrame(data=val_logits, columns=cols_names_logits)
     val_df_targets = pd.DataFrame(data=val_targets, columns=cols_names_targets)
     val_df = pd.concat([val_df, val_df_logits, val_df_targets], axis=1)
-    val_metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv",val_df,False)
+    val_metrics = subgroup_fairness_analysis_train(0,val_path,val_df,False)
     
     # Log metrics to wandb
     wandb.log({
@@ -276,7 +276,7 @@ def main(config=None):
         EPSILON = config.EPSILON
         # data
         data = CheXpertDataModule(csv_train_img='../data/chexpert.sample.train.csv',
-                                csv_val_img='../data/chexpert.sample.val.csv',
+                                csv_val_img=config.val_path,
                                 csv_test_img='../data/chexpert.sample.test.csv',
                                 csv_test_img_resample='../data/chexpert.resample.test.csv',
                                 image_size=image_size,
@@ -347,7 +347,7 @@ def main(config=None):
         best_metrics['max_worse_case_group_TPR'] = 0.0
         
         for epoch in tqdm(range(epochs), desc="Epoch", unit="epoch"):
-            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics)
+            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics, val_path= config.val_path)
         # train_model(model,train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer)
 
         for metric_name, metric_value in best_metrics.items():

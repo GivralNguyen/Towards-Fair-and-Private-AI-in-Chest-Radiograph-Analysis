@@ -20,3 +20,5 @@ parameters:
   value: 'nonli-resnetdp-all'
  save_root:
   value: 'chexpert_wandb/disease_wandb_sweep_epsilon_0.54_maximize_val_AUC_minus_FPR/'
+ val_path:
+  value: '/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv'
