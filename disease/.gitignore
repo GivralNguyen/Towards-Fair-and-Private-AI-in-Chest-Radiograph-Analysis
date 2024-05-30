@@ -10,3 +10,4 @@ disease/__pycache__/
 wandb
 chexpert_wandb
 output
+__pycache__
