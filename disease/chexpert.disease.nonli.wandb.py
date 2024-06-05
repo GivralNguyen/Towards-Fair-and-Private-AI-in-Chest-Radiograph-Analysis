@@ -301,7 +301,7 @@ def main(config=None):
 
             print('EMBEDDINGS')
             # print(model)
-            head = model._module.remove_head()
+            head = model.remove_head()
             # print(model)
             embeds_val, targets_val = embeddings(model, data.val_dataloader(), device)
             df = pd.DataFrame(data=embeds_val)
@@ -321,7 +321,7 @@ def main(config=None):
             df = pd.concat([df, df_targets], axis=1)
             df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.resample.test.csv', index=False)
             # print(model)
-            model._module.restore_head(head)
+            model.restore_head(head)
             # print(model)
             # cleanup
             # print("before releasing memory")
@@ -336,7 +336,6 @@ def main(config=None):
             # print("after releasing memory")
             # print(torch.cuda.memory_summary())
         del model, optimizer, train_loader, data, privacy_engine, loaded_state_dict
-        del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
         torch.cuda.empty_cache()
         gc.collect()
 
@@ -350,5 +349,6 @@ if __name__ == '__main__':
     pprint.pprint(sweep_config)
     sweep_id = wandb.sweep(sweep_config, project=os.path.basename(args.config))
     wandb.agent(sweep_id, main)
+    # wandb.agent('8opfc9pe', main)
     wandb.finish()
     # main()  
