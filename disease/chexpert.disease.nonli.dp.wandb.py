@@ -38,19 +38,15 @@ batch_size = 4096 #
 num_workers = 4
 MAX_GRAD_NORM = 1.2
 
-def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, best_metrics, val_path):
+def train_model(model, train_loader, val_loader, val_resample_loader, optimizer,writer, epoch, max_physical_batch_size, privacy_engine, best_metrics):
 
     model.train()
     losses = []
-    # logits = []
-    # preds = []
-    # targets = []
     with BatchMemoryManager(
         data_loader=train_loader, 
         max_physical_batch_size=max_physical_batch_size, 
         optimizer=optimizer
     ) as memory_safe_data_loader:
-    # with train_loader as memory_safe_data_loader:
         train_bar = tqdm(memory_safe_data_loader, desc='Training', unit='batch')
         for batch in train_bar:
             optimizer.zero_grad()
@@ -59,32 +55,15 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
             prob = torch.sigmoid(output)
             loss = F.binary_cross_entropy(prob, labels)
             losses.append(loss.item())
-            # logits.append(output)
-            # preds.append(prob)
-            # targets.append(labels)
             loss.backward()
             optimizer.step()
             train_bar.set_postfix({'Loss': loss.item()})
     epsilon = privacy_engine.get_epsilon(DELTA)
-    # logits = torch.cat(logits, dim=0).detach().cpu().numpy()
-    # preds = torch.cat(preds, dim=0).detach().cpu().numpy()
-    # targets = torch.cat(targets, dim=0).detach().cpu().numpy()
-    # df = pd.DataFrame(data=preds, columns=cols_names_classes)
-    # df_logits = pd.DataFrame(data=logits, columns=cols_names_logits)
-    # df_targets = pd.DataFrame(data=targets, columns=cols_names_targets)
-    # df = pd.concat([df, df_logits, df_targets], axis=1)
-    # metrics = subgroup_fairness_analysis_train(0,"/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.train.csv",df,False)
-    # # Define the groups and metrics to be printed
     groups = ['All', 'White', 'Asian', 'Black', 'Female', 'Male']
     metrics_to_print = ['TPR', 'FPR', 'AUC', 'AP']
 
     # Print the training metrics
     print(f"\tTrain Epoch: {epoch} \tTrain Loss: {np.mean(losses):.6f} (ε = {epsilon:.2f}, δ = {DELTA})", end=' ')
-    # for group in groups:
-    #     print(f"({group})", end=' ')
-    #     for metric in metrics_to_print:
-    #         print(f"{metric} = {metrics[group][metric]:.4f}", end=' ')
-    # print()  # Newline at the end of the print statement
     # Log metrics to wandb
     wandb.log({
         "train_loss": np.mean(losses),
@@ -92,26 +71,6 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
         "epoch": epoch,
     })
 
-    # Log demographic-specific metrics
-    # for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
-    #     wandb.log({
-    #         f"TPR_{group}": metrics[group]['TPR'],
-    #         f"FPR_{group}": metrics[group]['FPR'],
-    #         f"AUC_{group}": metrics[group]['AUC'],
-    #         f"AP_{group}": metrics[group]['AP'],
-    #         "epoch": epoch,
-    #     })
-    # writer.add_scalar('Train/Loss', np.mean(losses), epoch)
-    # print("before releasing train data and label")
-    # print(torch.cuda.memory_summary())
-    # del df, df_logits, df_targets
-    # del metrics
-    # del logits, preds, targets
-    # del input_data, labels
-    # torch.cuda.empty_cache()
-    # gc.collect()
-    # print("after releasing train data, metrics and label")
-    # print(torch.cuda.memory_summary())
     model.eval()
     val_losses = []
     val_logits = []
@@ -136,7 +95,7 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     val_df_logits = pd.DataFrame(data=val_logits, columns=cols_names_logits)
     val_df_targets = pd.DataFrame(data=val_targets, columns=cols_names_targets)
     val_df = pd.concat([val_df, val_df_logits, val_df_targets], axis=1)
-    val_metrics = subgroup_fairness_analysis_train(0,val_path,val_df,False)
+    val_metrics = subgroup_fairness_analysis_train(0,'/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.sample.val.csv',val_df,False)
     
     # Log metrics to wandb
     wandb.log({
@@ -181,7 +140,7 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
         "overall_AUC_minus_TPR_gap": overall_AUC_minus_TPR_gap,
         "epoch": epoch,
     })
-
+    print("\n")
     print(f"\Val Epoch: {epoch} \Val Loss: {val_loss:.6f}", end=' ')
     # Print subgroup-specific metrics
     for group in groups:
@@ -197,10 +156,6 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     print(f"overall_AUC_minus_TPR_gap: {overall_AUC_minus_TPR_gap:.4f}")
     
     # Save checkpoint if validation loss improves
-    # best_metrics['max_overall_AUC'] = 0.0
-    #     best_metrics['max_overall_AUC-TPR_gap'] = 0.0
-    #     best_metrics['min_TPR_gap'] = float('inf')
-    #     best_metrics['max_worse_case_group_TPR'] = float('inf')
 
     max_val_roc_auc = best_metrics['max_overall_AUC'] 
     if val_metrics['All']['AUC']  > max_val_roc_auc:
@@ -258,6 +213,145 @@ def train_model(model, train_loader, val_loader, optimizer,writer, epoch, max_ph
     del tprs, aucs
     torch.cuda.empty_cache()
     gc.collect()
+
+    resample_val_losses = []
+    resample_val_logits = []
+    resample_val_preds = []
+    resample_val_targets = []
+    with torch.no_grad():
+        for batch in val_resample_loader:
+            input_data, labels = batch['image'].to('cuda'), batch['label'].to('cuda')
+            output = model(input_data)
+            prob = torch.sigmoid(output)
+            resample_val_loss_ = (F.binary_cross_entropy(prob, labels))
+            resample_val_losses.append(resample_val_loss_.item())
+            resample_val_logits.append(output)
+            resample_val_preds.append(prob)
+            resample_val_targets.append(labels)
+    resample_val_loss = np.mean(resample_val_losses)
+    resample_val_logits = torch.cat(resample_val_logits, dim=0).detach().cpu().numpy()
+    resample_val_preds = torch.cat(resample_val_preds, dim=0).detach().cpu().numpy()
+    resample_val_targets = torch.cat(resample_val_targets, dim=0).detach().cpu().numpy()
+
+    resample_val_df = pd.DataFrame(data=resample_val_preds, columns=cols_names_classes)
+    resample_val_df_logits = pd.DataFrame(data=resample_val_logits, columns=cols_names_logits)
+    resample_val_df_targets = pd.DataFrame(data=resample_val_targets, columns=cols_names_targets)
+    resample_val_df = pd.concat([resample_val_df, resample_val_df_logits, resample_val_df_targets], axis=1)
+    resample_val_metrics = subgroup_fairness_analysis_train(0,'/vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/data/chexpert.resample.val.csv',resample_val_df,False)
+
+    # Log metrics to wandb
+    wandb.log({
+        "resample_val_loss": resample_val_loss,
+        "epoch": epoch,
+    })
+
+    # Initialize variables to store TPR and AUC values
+    resample_val_tprs = []
+    resample_val_aucs = []
+    # Dictionary to map subgroup names to TPR values for easy retrieval
+    resample_val_tpr_dict = {}
+
+    # Iterate over subgroups to gather TPR and AUC values
+    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+        resample_val_tpr = resample_val_metrics[group]['TPR']
+        resample_val_auc = resample_val_metrics[group]['AUC']
+        resample_val_tprs.append(resample_val_tpr)
+        resample_val_aucs.append(resample_val_auc)
+        resample_val_tpr_dict[group] = resample_val_tpr
+
+    # Calculate the largest TPR gap between subgroups
+    resample_val_largest_tpr_gap = max(resample_val_tprs) - min(resample_val_tprs)
+
+    # Find the worst subgroup TPR
+    resample_val_worst_tpr = min(resample_val_tprs)
+    resample_val_worst_tpr_subgroup = min(resample_val_tpr_dict, key=resample_val_tpr_dict.get)
+    resample_val_overall_AUC_minus_TPR_gap = resample_val_metrics['All']['AUC'] - resample_val_largest_tpr_gap
+
+    # Log demographic-specific metrics
+    for group in ['All', 'White', 'Asian', 'Black', 'Female', 'Male']:
+        wandb.log({
+            f"resample_val_TPR_{group}": resample_val_metrics[group]['TPR'],
+            f"resample_val_AUC_{group}": resample_val_metrics[group]['AUC'],
+            "epoch": epoch,
+        })
+
+    wandb.log({
+        "resample_val_largest_tpr_gap": resample_val_largest_tpr_gap,
+        "resample_val_worst_tpr": resample_val_worst_tpr,
+        "resample_val_overall_AUC_minus_TPR_gap": resample_val_overall_AUC_minus_TPR_gap,
+        "epoch": epoch,
+    })
+    print("\n")
+    print(f"\Resample Val Epoch: {epoch} \Resample Val Loss: {resample_val_loss:.6f}", end=' ')
+    # Print subgroup-specific metrics
+    for group in groups:
+        print(f"({group})", end=' ')
+        for metric in metrics_to_print:
+            print(f"{metric} = {resample_val_metrics[group][metric]:.4f}", end=' ')
+
+    # Print additional fairness metrics
+    print("\n")
+    print(f"Largest TPR gap: {resample_val_largest_tpr_gap:.4f}")
+    print(f"Worst subgroup TPR: {resample_val_worst_tpr:.4f}")
+    print(f"The group with worst TPR: {resample_val_worst_tpr_subgroup}")
+    print(f"overall_AUC_minus_TPR_gap: {resample_val_overall_AUC_minus_TPR_gap:.4f}")
+    # print("after releasing val data, metrics and label")
+    # print(torch.cuda.memory_summary())
+    # resample val
+    # Save checkpoint if validation loss improves
+
+    max_resample_val_roc_auc = best_metrics['max_resample_val_overall_AUC'] 
+    if resample_val_metrics['All']['AUC'] > max_resample_val_roc_auc:
+        max_resample_val_roc_auc = resample_val_metrics['All']['AUC']
+        os.makedirs(f'{writer.log_dir}/max_resample_val_overall_AUC', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_resample_val_overall_AUC/best_model.pth')
+        print(
+            f"Save model max resample_val_roc_auc."
+            f"Max resample_val_roc_auc = {resample_val_metrics['All']['AUC'] :.4f})"
+        )
+        best_metrics['max_resample_val_overall_AUC'] = max_resample_val_roc_auc
+
+    max_resample_val_worse_case_group_TPR = best_metrics['max_resample_val_worse_case_group_TPR'] 
+    if resample_val_worst_tpr > max_resample_val_worse_case_group_TPR:
+        max_resample_val_worse_case_group_TPR = resample_val_worst_tpr
+        os.makedirs(f'{writer.log_dir}/max_resample_val_worse_case_group_TPR', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_resample_val_worse_case_group_TPR/best_model.pth')
+        print(
+            f"Save model max_resample_val_worse_case_group_TPR."
+            f"max_resample_val_worse_case_group_TPR= {resample_val_worst_tpr :.4f})"
+        )
+        best_metrics['max_resample_val_worse_case_group_TPR'] = max_resample_val_worse_case_group_TPR
+
+    min_resample_val_largest_TPR_gap = best_metrics['min_resample_val_largest_TPR_gap'] 
+    if resample_val_largest_tpr_gap < min_resample_val_largest_TPR_gap:
+        min_resample_val_largest_TPR_gap = resample_val_largest_tpr_gap
+        os.makedirs(f'{writer.log_dir}/min_resample_val_largest_TPR_gap', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/min_resample_val_largest_TPR_gap/best_model.pth')
+        print(
+            f"Save model min_resample_val_largest_TPR_gap."
+            f"min_resample_val_largest_TPR_gap= {resample_val_largest_tpr_gap :.4f})"
+        )
+        best_metrics['min_resample_val_largest_TPR_gap'] = min_resample_val_largest_TPR_gap
+
+    max_resample_val_overall_AUC_minus_TPR_gap = best_metrics['max_resample_val_overall_AUC_minus_TPR_gap'] 
+    if resample_val_overall_AUC_minus_TPR_gap > max_resample_val_overall_AUC_minus_TPR_gap:
+        max_resample_val_overall_AUC_minus_TPR_gap = resample_val_overall_AUC_minus_TPR_gap
+        os.makedirs(f'{writer.log_dir}/max_resample_val_overall_AUC_minus_TPR_gap', exist_ok=True)
+        torch.save(model.state_dict(), f'{writer.log_dir}/max_resample_val_overall_AUC_minus_TPR_gap/best_model.pth')
+        print(
+            f"Save model max_resample_val_overall_AUC_minus_TPR_gap"
+            f"max_resample_val_overall_AUC_minus_TPR_gap= {resample_val_overall_AUC_minus_TPR_gap :.4f})"
+        )
+        best_metrics['max_resample_val_overall_AUC_minus_TPR_gap'] = max_resample_val_overall_AUC_minus_TPR_gap
+    
+    del input_data, labels
+    del resample_val_df, resample_val_df_logits, resample_val_df_targets
+    del resample_val_metrics, resample_val_loss
+    del resample_val_logits, resample_val_preds, resample_val_targets
+    del resample_val_largest_tpr_gap, resample_val_worst_tpr
+    del resample_val_tprs, resample_val_aucs
+    torch.cuda.empty_cache()
+    gc.collect()
     # print("after releasing val data, metrics and label")
     # print(torch.cuda.memory_summary())
     return best_metrics
@@ -276,7 +370,8 @@ def main(config=None):
         EPSILON = config.EPSILON
         # data
         data = CheXpertDataModule(csv_train_img='../data/chexpert.sample.train.csv',
-                                csv_val_img=config.val_path,
+                                csv_val_img='../data/chexpert.sample.val.csv',
+                                csv_val_img_resample='../data/chexpert.resample.val.csv',
                                 csv_test_img='../data/chexpert.sample.test.csv',
                                 csv_test_img_resample='../data/chexpert.resample.test.csv',
                                 image_size=image_size,
@@ -345,9 +440,13 @@ def main(config=None):
         best_metrics['max_overall_AUC_minus_TPR_gap'] = 0.0
         best_metrics['min_largest_TPR_gap'] = float('inf')
         best_metrics['max_worse_case_group_TPR'] = 0.0
-        
+        best_metrics['max_resample_val_overall_AUC'] = 0.0
+        best_metrics['max_resample_val_overall_AUC_minus_TPR_gap'] = 0.0
+        best_metrics['min_resample_val_largest_TPR_gap'] = float('inf')
+        best_metrics['max_resample_val_worse_case_group_TPR'] = 0.0
+
         for epoch in tqdm(range(epochs), desc="Epoch", unit="epoch"):
-            best_metrics = train_model(model, train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics, val_path= config.val_path)
+            best_metrics = train_model(model, train_loader,data.val_dataloader() ,data.val_resample_dataloader(), optimizer=optimizer, writer=writer, epoch = epoch + 1, max_physical_batch_size = config.max_physical_batch_size, privacy_engine=privacy_engine, best_metrics = best_metrics)
         # train_model(model,train_loader,data.val_dataloader() ,optimizer=optimizer, writer=writer)
 
         for metric_name, metric_value in best_metrics.items():
@@ -361,6 +460,14 @@ def main(config=None):
             df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
             df = pd.concat([df, df_logits, df_targets], axis=1)
             df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.val.csv', index=False)
+
+            print('VALIDATION RESAMPLE')
+            preds_val_resample, targets_val_resample, logits_val_resample = test(model, data.val_resample_dataloader(),num_classes, device)
+            df = pd.DataFrame(data=preds_val_resample, columns=cols_names_classes)
+            df_logits = pd.DataFrame(data=logits_val_resample, columns=cols_names_logits)
+            df_targets = pd.DataFrame(data=targets_val_resample, columns=cols_names_targets)
+            df = pd.concat([df, df_logits, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.resample.val.csv', index=False)
 
             print('TESTING')
             preds_test, targets_test, logits_test = test(model, data.test_dataloader(), num_classes, device)
@@ -378,7 +485,7 @@ def main(config=None):
             df = pd.concat([df, df_logits, df_targets], axis=1)
             df.to_csv(f'{writer.log_dir}/{metric_name}/predictions.resample.test.csv', index=False)
 
-            print('EMBEDDINGS')
+            print('EMBEDDINGS VAL')
             # print(model)
             head = model._module.remove_head()
             # print(model)
@@ -387,13 +494,21 @@ def main(config=None):
             df_targets = pd.DataFrame(data=targets_val, columns=cols_names_targets)
             df = pd.concat([df, df_targets], axis=1)
             df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.val.csv', index=False)
+            print('EMBEDDINGS VAL RESAMPLE')
+            embeds_val_resample, targets_val_resample = embeddings(model, data.val_resample_dataloader(), device)
+            df = pd.DataFrame(data=embeds_val_resample)
+            df_targets = pd.DataFrame(data=targets_val_resample, columns=cols_names_targets)
+            df = pd.concat([df, df_targets], axis=1)
+            df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.resample.val.csv', index=False)
 
+            print('EMBEDDINGS TEST')
             embeds_test, targets_test = embeddings(model, data.test_dataloader(), device)
             df = pd.DataFrame(data=embeds_test)
             df_targets = pd.DataFrame(data=targets_test, columns=cols_names_targets)
             df = pd.concat([df, df_targets], axis=1)
             df.to_csv(f'{writer.log_dir}/{metric_name}/embeddings.test.csv', index=False)
-
+            
+            print('EMBEDDINGS TEST RESAMPLE')
             embeds_test_resample, targets_test_resample = embeddings(model, data.test_resample_dataloader(), device)
             df = pd.DataFrame(data=embeds_test_resample)
             df_targets = pd.DataFrame(data=targets_test_resample, columns=cols_names_targets)
@@ -406,9 +521,10 @@ def main(config=None):
             # print("before releasing memory")
             # print(torch.cuda.memory_summary())
             del preds_val, targets_val, logits_val
+            del preds_val_resample, targets_val_resample, logits_val_resample
             del preds_test, targets_test, logits_test
             del preds_test_resample, targets_test_resample, logits_test_resample
-            del embeds_val, embeds_test, embeds_test_resample
+            del embeds_val, embeds_test, embeds_test_resample, embeds_val_resample
             # del new_state_dict, new_state_dict_without_fc, pretrained_resnet18
             torch.cuda.empty_cache()
             gc.collect()
