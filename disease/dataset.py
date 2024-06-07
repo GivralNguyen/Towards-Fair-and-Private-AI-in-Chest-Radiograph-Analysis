@@ -73,7 +73,7 @@ class CheXpertDataset(Dataset):
 
 
 class CheXpertDataModule(pl.LightningDataModule):
-    def __init__(self, csv_train_img, csv_val_img, csv_val_img_resample, csv_val_sex_img_resample, csv_test_img, csv_test_img_resample, csv_test_sex_img_resample, image_size, pseudo_rgb, batch_size, max_physical_batch_size, num_workers, train_aug):
+    def __init__(self, csv_train_img, csv_val_img, csv_val_img_resample, csv_test_img, csv_test_img_resample, image_size, pseudo_rgb, batch_size, max_physical_batch_size, num_workers, train_aug):
         super().__init__()
         self.csv_train_img = csv_train_img
         self.csv_val_img = csv_val_img
