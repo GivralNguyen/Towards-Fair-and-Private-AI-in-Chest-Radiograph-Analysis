@@ -7,7 +7,6 @@
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=16  # Number of CPUs (Don't use more than 24 per GPU)
 #SBATCH --mem=20G  # Memory in GB (Don't use more than 48GB per GPU unless you absolutely need it and know what you are doing)
-#SBATCH --nodelist=prometheus
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=END
 #SBATCH --mail-type=FAIL
@@ -15,4 +14,4 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=cobainnguyen@gmail.com
 # run the program
-python chexpert.disease.nonli.dp.wandb.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_0.29_maximize_resample_val_AUC_minus_FPR.yml
+python chexpert.disease.nonli.dp.wandb.cook.py --config /vol/aimspace/users/ngq/Towards-Fair-and-Private-AI-in-Chest-Radiograph-Analysis/config/sweep_epsilon_0.29_maximize_all_val_AUC_minus_FPR_cook.yml
