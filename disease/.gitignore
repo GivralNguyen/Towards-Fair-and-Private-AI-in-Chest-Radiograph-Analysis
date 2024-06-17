@@ -9,5 +9,6 @@ metrics/__pycache__/
 disease/__pycache__/
 wandb
 chexpert_wandb
+chexpert_wandb_old
 output
 __pycache__
