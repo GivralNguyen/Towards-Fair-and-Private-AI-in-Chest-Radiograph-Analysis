@@ -171,6 +171,28 @@ def subgroup_fairness_analysis(label, csv_path,data_dir,cnn_pred_disease, verbos
         print('Black\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_b,fpr_t_b,roc_auc_b))
         print('Female\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_f,fpr_t_f,roc_auc_f))
         print('Male\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_m,fpr_t_m,roc_auc_m))
+        # Calculate TPR shifts
+        subgroups = {
+            'White': tpr_t_w,
+            'Asian': tpr_t_a,
+            'Black': tpr_t_b,
+            'Female': tpr_t_f,
+            'Male': tpr_t_m
+        }
+
+        # Find the largest TPR shift
+        largest_shift = 0
+        largest_shift_groups = ('', '')
+
+        for group1, tpr1 in subgroups.items():
+            for group2, tpr2 in subgroups.items():
+                if group1 != group2:
+                    shift = abs(tpr1 - tpr2)
+                    if shift > largest_shift:
+                        largest_shift = shift
+                        largest_shift_groups = (group1, group2)
+
+        print('Largest TPR Shift: Between %s and %s\tTPR Shift %0.2f' % (largest_shift_groups[0], largest_shift_groups[1], largest_shift))
     # print('0-20 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_0_20,fpr_t_0_20,roc_auc_0_20))
     # print('20-40 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_20_40,fpr_t_20_40,roc_auc_20_40))
     # print('40-60 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_40_60,fpr_t_40_60,roc_auc_40_60))
@@ -466,6 +488,7 @@ def subgroup_fairness_analysis_train(label, csv_path,cnn_pred_disease,verbose):
         print('Black\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_b,fpr_t_b,roc_auc_b))
         print('Female\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_f,fpr_t_f,roc_auc_f))
         print('Male\tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_m,fpr_t_m,roc_auc_m))
+        
     # print('0-20 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_0_20,fpr_t_0_20,roc_auc_0_20))
     # print('20-40 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_20_40,fpr_t_20_40,roc_auc_20_40))
     # print('40-60 y/o \tTPR %0.2f | FPR %0.2f | AUC %0.2f' % (tpr_t_40_60,fpr_t_40_60,roc_auc_40_60))
